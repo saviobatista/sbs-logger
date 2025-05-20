@@ -1,0 +1,27 @@
+services:
+  ultrafeeder:
+    image: ghcr.io/sdr-enthusiasts/docker-adsb-ultrafeeder:latest
+    container_name: ultrafeeder
+    restart: unless-stopped
+    environment:
+      - TZ=America/Sao_Paulo
+      - READSB_NET_CONNECTOR=10.55.19.24,30003,sbs_in
+      - READSB_LAT=-23.08683358466868
+      - READSB_LON=-47.235
+      - READSB_ALT=640m
+      - READSB_RX_LOCATION_ACCURACY=2
+      - READSB_STATS_RANGE=true
+      - TAR1090_ENABLE=true
+      - TAR1090_INTERACTIVE_TTL=3600
+      - TAR1090_RANGE_OUTLINE_COLOR=green
+    ports:
+      - "8080:80"
+
+  sbs-logger:
+    build: .
+    container_name: sbs-logger
+    restart: unless-stopped
+    environment:
+      - TZ=America/Sao_Paulo
+    volumes:
+      - ./logs:/app/logs
