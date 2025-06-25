@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   ultrafeeder:
     image: ghcr.io/sdr-enthusiasts/docker-adsb-ultrafeeder:latest
@@ -15,13 +17,87 @@ services:
       - TAR1090_INTERACTIVE_TTL=3600
       - TAR1090_RANGE_OUTLINE_COLOR=green
     ports:
-      - "8080:80"
+      - "2480:80"
 
-  sbs-logger:
-    build: .
+  ingestor:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingestor
+    container_name: sbs-ingestor
+    restart: unless-stopped
+    environment:
+      - TZ=America/Sao_Paulo
+      - SOURCES=10.55.19.24:30003
+      - NATS_URL=nats://nats:4222
+    depends_on:
+      - nats
+
+  logger:
+    build:
+      context: .
+      dockerfile: Dockerfile.logger
     container_name: sbs-logger
     restart: unless-stopped
     environment:
       - TZ=America/Sao_Paulo
+      - OUTPUT_DIR=/app/logs
+      - NATS_URL=nats://nats:4222
     volumes:
       - ./logs:/app/logs
+    depends_on:
+      - nats
+
+  tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile.tracker
+    container_name: sbs-tracker
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - NATS_URL=nats://nats:4222
+      - DB_CONN_STR=postgres://sbs:sbs_password@timescaledb:5432/sbs_data?sslmode=disable
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      - nats
+      - timescaledb
+      - redis
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    container_name: sbs-migrate
+    environment:
+      - DB_CONN_STR=postgres://sbs:sbs_password@timescaledb:5432/sbs_data?sslmode=disable
+    depends_on:
+      - timescaledb
+
+  nats:
+    image: nats:latest
+    container_name: nats
+    command: ["--config", "/etc/nats/nats-server.conf"]
+    volumes:
+      - ./config/nats:/etc/nats
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: timescaledb
+    environment:
+      - POSTGRES_USER=sbs
+      - POSTGRES_PASSWORD=sbs_password
+      - POSTGRES_DB=sbs_data
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  timescaledb_data:
+  redis_data:

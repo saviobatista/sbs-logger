@@ -1,0 +1,310 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/savio/sbs-logger/internal/db"
+	"github.com/savio/sbs-logger/internal/nats"
+	"github.com/savio/sbs-logger/internal/parser"
+	"github.com/savio/sbs-logger/internal/redis"
+	"github.com/savio/sbs-logger/internal/stats"
+	"github.com/savio/sbs-logger/internal/types"
+)
+
+// StateTracker tracks aircraft states and flight sessions
+type StateTracker struct {
+	db            *db.Client
+	redis         *redis.Client
+	activeFlights map[string]*types.Flight
+	states        map[string]*types.AircraftState // Cache of latest states
+	stats         *stats.Stats
+}
+
+// NewStateTracker creates a new state tracker
+func NewStateTracker(db *db.Client, redis *redis.Client) *StateTracker {
+	return &StateTracker{
+		db:            db,
+		redis:         redis,
+		activeFlights: make(map[string]*types.Flight),
+		states:        make(map[string]*types.AircraftState),
+		stats:         stats.New(),
+	}
+}
+
+// Start initializes the state tracker
+func (t *StateTracker) Start(ctx context.Context) error {
+	// Load active flights from database
+	flights, err := t.db.GetActiveFlights()
+	if err != nil {
+		return fmt.Errorf("failed to load active flights: %w", err)
+	}
+
+	// Initialize active flights map and Redis cache
+	for _, flight := range flights {
+		t.activeFlights[flight.HexIdent] = flight
+		if err := t.redis.StoreFlight(ctx, flight); err != nil {
+			log.Printf("Warning: Failed to cache flight in Redis: %v", err)
+		}
+	}
+
+	// Set database client for statistics
+	t.stats.SetDB(t.db)
+
+	// Start statistics logging and persistence
+	go t.logStats(ctx)
+	go t.stats.StartPersistence(ctx, 5*time.Minute)
+
+	return nil
+}
+
+// ProcessMessage processes an SBS message and updates aircraft state
+func (t *StateTracker) ProcessMessage(msg *types.SBSMessage) error {
+	start := time.Now()
+	t.stats.IncrementTotalMessages()
+	t.stats.UpdateLastMessageTime()
+
+	// Parse message into aircraft state
+	state, err := parser.ParseMessage(msg.Raw, msg.Timestamp)
+	if err != nil {
+		t.stats.IncrementFailedMessages()
+		return fmt.Errorf("failed to parse message: %w", err)
+	}
+
+	// Skip if no state information
+	if state == nil {
+		return nil
+	}
+
+	t.stats.IncrementParsedMessages()
+	t.stats.IncrementMessageType(state.MsgType)
+
+	// Check flight validation in Redis
+	valid, err := t.redis.GetFlightValidation(context.Background(), state.HexIdent)
+	if err != nil {
+		log.Printf("Warning: Failed to get flight validation: %v", err)
+	} else if !valid {
+		return nil // Skip invalid flights
+	}
+
+	// Update state cache
+	latestState, exists := t.states[state.HexIdent]
+	if !exists {
+		t.states[state.HexIdent] = state
+	} else {
+		// Merge new state with existing state
+		t.mergeStates(latestState, state)
+	}
+
+	// Store aircraft state in Redis
+	if err := t.redis.StoreAircraftState(context.Background(), state); err != nil {
+		log.Printf("Warning: Failed to store aircraft state in Redis: %v", err)
+	}
+
+	// Store aircraft state in database
+	if err := t.db.StoreAircraftState(state); err != nil {
+		return fmt.Errorf("failed to store aircraft state: %w", err)
+	}
+	t.stats.IncrementStoredStates()
+
+	// Update flight session
+	if err := t.updateFlight(state); err != nil {
+		return fmt.Errorf("failed to update flight: %w", err)
+	}
+
+	// Update statistics
+	t.stats.SetActiveAircraft(uint64(len(t.states)))
+	t.stats.SetActiveFlights(uint64(len(t.activeFlights)))
+	t.stats.AddProcessingTime(time.Since(start))
+
+	return nil
+}
+
+// mergeStates merges new state into existing state
+func (t *StateTracker) mergeStates(existing, new *types.AircraftState) {
+	if new.Callsign != "" {
+		existing.Callsign = new.Callsign
+	}
+	if new.Altitude != 0 {
+		existing.Altitude = new.Altitude
+	}
+	if new.GroundSpeed != 0 {
+		existing.GroundSpeed = new.GroundSpeed
+	}
+	if new.Track != 0 {
+		existing.Track = new.Track
+	}
+	if new.Latitude != 0 {
+		existing.Latitude = new.Latitude
+	}
+	if new.Longitude != 0 {
+		existing.Longitude = new.Longitude
+	}
+	if new.VerticalRate != 0 {
+		existing.VerticalRate = new.VerticalRate
+	}
+	if new.Squawk != "" {
+		existing.Squawk = new.Squawk
+	}
+	existing.OnGround = new.OnGround
+	existing.Timestamp = new.Timestamp
+}
+
+// updateFlight updates or creates a flight session
+func (t *StateTracker) updateFlight(state *types.AircraftState) error {
+	// Try to get flight from Redis first
+	flight, err := t.redis.GetFlight(context.Background(), state.HexIdent)
+	if err != nil {
+		log.Printf("Warning: Failed to get flight from Redis: %v", err)
+	}
+
+	// If not in Redis, check local cache
+	if flight == nil {
+		flight = t.activeFlights[state.HexIdent]
+	}
+
+	if flight == nil {
+		// Create new flight
+		flight = &types.Flight{
+			SessionID:      uuid.New().String(),
+			HexIdent:       state.HexIdent,
+			Callsign:       state.Callsign,
+			StartedAt:      state.Timestamp,
+			FirstLatitude:  state.Latitude,
+			FirstLongitude: state.Longitude,
+		}
+		t.activeFlights[state.HexIdent] = flight
+
+		// Store in Redis
+		if err := t.redis.StoreFlight(context.Background(), flight); err != nil {
+			log.Printf("Warning: Failed to store flight in Redis: %v", err)
+		}
+
+		// Store in database
+		if err := t.db.CreateFlight(flight); err != nil {
+			return fmt.Errorf("failed to create flight: %w", err)
+		}
+		t.stats.IncrementCreatedFlights()
+	} else {
+		// Update existing flight
+		flight.LastLatitude = state.Latitude
+		flight.LastLongitude = state.Longitude
+		if state.Altitude > flight.MaxAltitude {
+			flight.MaxAltitude = state.Altitude
+		}
+		if state.GroundSpeed > flight.MaxGroundSpeed {
+			flight.MaxGroundSpeed = state.GroundSpeed
+		}
+
+		// Check if flight has ended (no updates for 5 minutes)
+		if time.Since(state.Timestamp) > 5*time.Minute {
+			flight.EndedAt = state.Timestamp
+			delete(t.activeFlights, state.HexIdent)
+			delete(t.states, state.HexIdent)
+
+			// Remove from Redis
+			if err := t.redis.DeleteFlight(context.Background(), state.HexIdent); err != nil {
+				log.Printf("Warning: Failed to delete flight from Redis: %v", err)
+			}
+			if err := t.redis.DeleteAircraftState(context.Background(), state.HexIdent); err != nil {
+				log.Printf("Warning: Failed to delete aircraft state from Redis: %v", err)
+			}
+
+			// Update in database
+			if err := t.db.UpdateFlight(flight); err != nil {
+				return fmt.Errorf("failed to update flight: %w", err)
+			}
+			t.stats.IncrementEndedFlights()
+		} else {
+			// Update in Redis
+			if err := t.redis.StoreFlight(context.Background(), flight); err != nil {
+				log.Printf("Warning: Failed to update flight in Redis: %v", err)
+			}
+			t.stats.IncrementUpdatedFlights()
+		}
+	}
+
+	return nil
+}
+
+// logStats periodically logs statistics
+func (t *StateTracker) logStats(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			log.Printf("Statistics:\n%s", t.stats)
+		}
+	}
+}
+
+func main() {
+	// Load configuration
+	natsURL := os.Getenv("NATS_URL")
+	if natsURL == "" {
+		natsURL = "nats://nats:4222" // Default to Docker service name
+	}
+
+	dbConnStr := os.Getenv("DB_CONN_STR")
+	if dbConnStr == "" {
+		dbConnStr = "postgres://sbs:sbs_password@timescaledb:5432/sbs_data?sslmode=disable"
+	}
+
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "redis:6379" // Default to Docker service name
+	}
+
+	// Create NATS client
+	natsClient, err := nats.New(natsURL)
+	if err != nil {
+		log.Fatalf("Failed to create NATS client: %v", err)
+	}
+	defer natsClient.Close()
+
+	// Create database client
+	dbClient, err := db.New(dbConnStr)
+	if err != nil {
+		log.Fatalf("Failed to create database client: %v", err)
+	}
+	defer dbClient.Close()
+
+	// Create Redis client
+	redisClient, err := redis.New(redisAddr)
+	if err != nil {
+		log.Fatalf("Failed to create Redis client: %v", err)
+	}
+	defer redisClient.Close()
+
+	// Create state tracker
+	tracker := NewStateTracker(dbClient, redisClient)
+	if err := tracker.Start(context.Background()); err != nil {
+		log.Fatalf("Failed to start state tracker: %v", err)
+	}
+
+	// Subscribe to SBS messages
+	if err := natsClient.SubscribeSBSRaw(func(msg *types.SBSMessage) {
+		if err := tracker.ProcessMessage(msg); err != nil {
+			log.Printf("Failed to process message: %v", err)
+		}
+	}); err != nil {
+		log.Fatalf("Failed to subscribe to SBS messages: %v", err)
+	}
+
+	// Wait for shutdown signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
+	log.Println("Shutting down...")
+}
