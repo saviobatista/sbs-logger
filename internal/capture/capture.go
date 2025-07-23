@@ -98,7 +98,9 @@ func (c *Capture) Stop() {
 	close(c.stopChan)
 	c.mu.Lock()
 	for _, conn := range c.conns {
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing conn: %v\n", err)
+		}
 	}
 	c.mu.Unlock()
 	c.wg.Wait()

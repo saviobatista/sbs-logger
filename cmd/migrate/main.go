@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 
@@ -27,7 +28,9 @@ func main() {
 	// Test connection
 	if err := db.Ping(); err != nil {
 		log.Printf("Failed to ping database: %v", err)
-		db.Close()
+		if err := db.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing db: %v\n", err)
+		}
 		os.Exit(1)
 	}
 
@@ -44,16 +47,22 @@ func main() {
 	if *rollback {
 		if err := migrator.Rollback(migrationList); err != nil {
 			log.Printf("Failed to rollback migration: %v", err)
-			db.Close()
+			if err := db.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "error closing db: %v\n", err)
+			}
 			os.Exit(1)
 		}
 	} else {
 		if err := migrator.Migrate(migrationList); err != nil {
 			log.Printf("Failed to apply migrations: %v", err)
-			db.Close()
+			if err := db.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "error closing db: %v\n", err)
+			}
 			os.Exit(1)
 		}
 	}
 
-	db.Close()
+	if err := db.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "error closing db: %v\n", err)
+	}
 }

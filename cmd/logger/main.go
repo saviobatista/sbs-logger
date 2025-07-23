@@ -155,6 +155,7 @@ func (l *Logger) rotateFile() error {
 	logPath := filepath.Join(l.outputDir, fmt.Sprintf("sbs_%s.log", l.currentDate))
 
 	// Create new file
+	//nolint:gosec // logPath is controlled by application logic
 	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
@@ -167,6 +168,7 @@ func (l *Logger) rotateFile() error {
 // compressFile compresses a log file using gzip
 func compressFile(filePath string) error {
 	// Read the file
+	//nolint:gosec // filePath is controlled by application logic
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
@@ -174,6 +176,7 @@ func compressFile(filePath string) error {
 
 	// Create compressed file
 	compressedPath := filePath + ".gz"
+	//nolint:gosec // compressedPath is controlled by application logic
 	compressedFile, err := os.Create(compressedPath)
 	if err != nil {
 		return fmt.Errorf("failed to create compressed file: %w", err)
