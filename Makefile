@@ -126,6 +126,33 @@ release: ## Create a new release (requires VERSION variable)
 	git tag $(VERSION)
 	git push origin $(VERSION)
 
+# Docker Hub
+
+dockerhub-test: ## Test Docker Hub builds locally
+	@echo "Testing Docker Hub builds..."
+	@for service in $(SERVICES); do \
+		echo "Testing build for $$service..."; \
+		docker build -f Dockerfile.$$service -t test-sbs-$$service .; \
+	done
+	@echo "All Docker Hub builds tested successfully!"
+
+dockerhub-push: ## Push to Docker Hub (requires DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)
+	@if [ -z "$(DOCKERHUB_USERNAME)" ] || [ -z "$(DOCKERHUB_TOKEN)" ]; then \
+		echo "Error: DOCKERHUB_USERNAME and DOCKERHUB_TOKEN environment variables are required"; \
+		echo "Usage: make dockerhub-push DOCKERHUB_USERNAME=youruser DOCKERHUB_TOKEN=yourtoken"; \
+		exit 1; \
+	fi
+	@echo "Logging in to Docker Hub..."
+	@echo "$(DOCKERHUB_TOKEN)" | docker login -u "$(DOCKERHUB_USERNAME)" --password-stdin
+	@for service in $(SERVICES); do \
+		echo "Building and pushing $$service to Docker Hub..."; \
+		docker build -f Dockerfile.$$service -t $(DOCKERHUB_USERNAME)/sbs-$$service:$(VERSION) .; \
+		docker tag $(DOCKERHUB_USERNAME)/sbs-$$service:$(VERSION) $(DOCKERHUB_USERNAME)/sbs-$$service:latest; \
+		docker push $(DOCKERHUB_USERNAME)/sbs-$$service:$(VERSION); \
+		docker push $(DOCKERHUB_USERNAME)/sbs-$$service:latest; \
+	done
+	@echo "Successfully pushed all images to Docker Hub!"
+
 # Development workflow
 dev-setup: deps install-tools ## Setup development environment
 	@echo "Development environment setup complete!"
