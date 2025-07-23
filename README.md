@@ -266,7 +266,52 @@ make build-logger
 make build-tracker
 ```
 
+### Docker Hub Publishing
+
+The project includes automated Docker Hub publishing. To set up:
+
+1. **Setup Docker Hub publishing**:
+```bash
+make dockerhub-setup
+```
+
+2. **Test Docker builds locally**:
+```bash
+make dockerhub-test
+```
+
+3. **Manual push to Docker Hub**:
+```bash
+make dockerhub-push DOCKERHUB_USERNAME=youruser DOCKERHUB_TOKEN=yourtoken VERSION=v1.0.0
+```
+
+4. **Automated publishing**: Create a GitHub release to trigger automatic publishing
+
+For detailed setup instructions, see [Docker Hub Setup Guide](docs/dockerhub-setup.md).
+
 ## 🚀 Deployment
+
+### Docker Images
+
+The project provides pre-built Docker images on multiple registries:
+
+#### GitHub Container Registry (GHCR)
+```bash
+# Pull images from GHCR
+docker pull ghcr.io/savio/sbs-logger/sbs-ingestor:latest
+docker pull ghcr.io/savio/sbs-logger/sbs-logger:latest
+docker pull ghcr.io/savio/sbs-logger/sbs-tracker:latest
+docker pull ghcr.io/savio/sbs-logger/sbs-migrate:latest
+```
+
+#### Docker Hub
+```bash
+# Pull images from Docker Hub
+docker pull saviobatista/sbs-ingestor:latest
+docker pull saviobatista/sbs-logger:latest
+docker pull saviobatista/sbs-tracker:latest
+docker pull saviobatista/sbs-migrate:latest
+```
 
 ### Production Considerations
 
@@ -284,6 +329,32 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 # Scale services
 docker-compose up -d --scale ingestor=3
+```
+
+### Using Pre-built Images
+
+Update your `docker-compose.yml` to use pre-built images:
+
+```yaml
+services:
+  ingestor:
+    image: saviobatista/sbs-ingestor:latest
+    # or: image: ghcr.io/savio/sbs-logger/sbs-ingestor:latest
+    environment:
+      - SOURCES=your-adsb-receiver:30003
+      - NATS_URL=nats://nats:4222
+    depends_on:
+      - nats
+
+  logger:
+    image: saviobatista/sbs-logger:latest
+    environment:
+      - OUTPUT_DIR=/app/logs
+      - NATS_URL=nats://nats:4222
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - nats
 ```
 
 ## 📝 Logging
