@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  packages: write
+
 env:
   GO_VERSION: '1.23.0'
   DOCKER_REGISTRY: ghcr.io
@@ -143,6 +147,11 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
           flavor: |
             latest=auto
+
+      - name: Debug metadata
+        run: |
+          echo "Image names: ${{ steps.meta.outputs.tags }}"
+          echo "Labels: ${{ steps.meta.outputs.labels }}"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
