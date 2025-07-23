@@ -37,8 +37,8 @@ func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error)
 	msgTypeIndex := 0
 	if len(fields) > 0 && fields[0] == "MSG" {
 		// SBS format: MSG,type,transmission_type,session_id,aircraft_id,hex_ident,flight_id,...
-		if len(fields) < 23 {
-			return nil, fmt.Errorf("invalid SBS message format: expected at least 23 fields, got %d", len(fields))
+		if len(fields) < 22 {
+			return nil, fmt.Errorf("invalid SBS message format: expected at least 22 fields, got %d", len(fields))
 		}
 		msgTypeIndex = 1 // Message type is at index 1 after "MSG"
 	}
@@ -109,14 +109,20 @@ func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error)
 		if squawk, err := strconv.Atoi(fields[17+msgTypeIndex]); err == nil {
 			state.Squawk = fmt.Sprintf("%04d", squawk)
 		}
-		if onGround, err := strconv.Atoi(fields[21+msgTypeIndex]); err == nil {
-			state.OnGround = onGround == 1
+		// Check if we have enough fields for onGround
+		if len(fields) > 21+msgTypeIndex {
+			if onGround, err := strconv.Atoi(fields[21+msgTypeIndex]); err == nil {
+				state.OnGround = onGround == 1
+			}
 		}
 
 	case MsgTypeNewGround:
 		state.HexIdent = fields[4+msgTypeIndex]
-		if onGround, err := strconv.Atoi(fields[21+msgTypeIndex]); err == nil {
-			state.OnGround = onGround == 1
+		// Check if we have enough fields for onGround
+		if len(fields) > 21+msgTypeIndex {
+			if onGround, err := strconv.Atoi(fields[21+msgTypeIndex]); err == nil {
+				state.OnGround = onGround == 1
+			}
 		}
 
 	default:
