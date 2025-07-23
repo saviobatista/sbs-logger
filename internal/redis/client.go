@@ -50,22 +50,30 @@ func (c *Client) StoreFlight(ctx context.Context, flight *types.Flight) error {
 	return c.client.Set(ctx, key, data, 24*time.Hour).Err()
 }
 
+// getData retrieves data from Redis and unmarshals it into the target
+func (c *Client) getData(ctx context.Context, key string, target interface{}, dataType string) error {
+	data, err := c.client.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil // Data not found
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get %s data: %w", dataType, err)
+	}
+
+	if err := json.Unmarshal(data, target); err != nil {
+		return fmt.Errorf("failed to unmarshal %s data: %w", dataType, err)
+	}
+
+	return nil
+}
+
 // GetFlight retrieves flight data from Redis
 func (c *Client) GetFlight(ctx context.Context, hexIdent string) (*types.Flight, error) {
 	key := fmt.Sprintf("flight:%s", hexIdent)
-	data, err := c.client.Get(ctx, key).Bytes()
-	if err == redis.Nil {
-		return nil, nil // Flight not found
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get flight data: %w", err)
-	}
-
 	var flight types.Flight
-	if err := json.Unmarshal(data, &flight); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal flight data: %w", err)
+	if err := c.getData(ctx, key, &flight, "flight"); err != nil {
+		return nil, err
 	}
-
 	return &flight, nil
 }
 
@@ -89,19 +97,10 @@ func (c *Client) StoreAircraftState(ctx context.Context, state *types.AircraftSt
 // GetAircraftState retrieves the latest aircraft state from Redis
 func (c *Client) GetAircraftState(ctx context.Context, hexIdent string) (*types.AircraftState, error) {
 	key := fmt.Sprintf("aircraft:%s", hexIdent)
-	data, err := c.client.Get(ctx, key).Bytes()
-	if err == redis.Nil {
-		return nil, nil // Aircraft state not found
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get aircraft state: %w", err)
-	}
-
 	var state types.AircraftState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal aircraft state: %w", err)
+	if err := c.getData(ctx, key, &state, "aircraft state"); err != nil {
+		return nil, err
 	}
-
 	return &state, nil
 }
 

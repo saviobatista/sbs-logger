@@ -30,7 +30,8 @@ func main() {
 	// Create NATS client
 	client, err := nats.New(natsURL)
 	if err != nil {
-		log.Fatalf("Failed to create NATS client: %v", err)
+		log.Printf("Failed to create NATS client: %v", err)
+		os.Exit(1)
 	}
 	defer client.Close()
 

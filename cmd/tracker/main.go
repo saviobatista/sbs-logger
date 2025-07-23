@@ -268,28 +268,38 @@ func main() {
 	// Create NATS client
 	natsClient, err := nats.New(natsURL)
 	if err != nil {
-		log.Fatalf("Failed to create NATS client: %v", err)
+		log.Printf("Failed to create NATS client: %v", err)
+		os.Exit(1)
 	}
-	defer natsClient.Close()
+	// Note: natsClient.Close() will be called in the shutdown handler
 
 	// Create database client
 	dbClient, err := db.New(dbConnStr)
 	if err != nil {
-		log.Fatalf("Failed to create database client: %v", err)
+		log.Printf("Failed to create database client: %v", err)
+		natsClient.Close()
+		os.Exit(1)
 	}
-	defer dbClient.Close()
+	// Note: dbClient.Close() will be called in the shutdown handler
 
 	// Create Redis client
 	redisClient, err := redis.New(redisAddr)
 	if err != nil {
-		log.Fatalf("Failed to create Redis client: %v", err)
+		log.Printf("Failed to create Redis client: %v", err)
+		natsClient.Close()
+		dbClient.Close()
+		os.Exit(1)
 	}
-	defer redisClient.Close()
+	// Note: redisClient.Close() will be called in the shutdown handler
 
 	// Create state tracker
 	tracker := NewStateTracker(dbClient, redisClient)
 	if err := tracker.Start(context.Background()); err != nil {
-		log.Fatalf("Failed to start state tracker: %v", err)
+		log.Printf("Failed to start state tracker: %v", err)
+		natsClient.Close()
+		dbClient.Close()
+		redisClient.Close()
+		os.Exit(1)
 	}
 
 	// Subscribe to SBS messages
@@ -298,7 +308,11 @@ func main() {
 			log.Printf("Failed to process message: %v", err)
 		}
 	}); err != nil {
-		log.Fatalf("Failed to subscribe to SBS messages: %v", err)
+		log.Printf("Failed to subscribe to SBS messages: %v", err)
+		natsClient.Close()
+		dbClient.Close()
+		redisClient.Close()
+		os.Exit(1)
 	}
 
 	// Wait for shutdown signal
@@ -307,4 +321,7 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down...")
+	natsClient.Close()
+	dbClient.Close()
+	redisClient.Close()
 }

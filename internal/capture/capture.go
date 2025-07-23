@@ -43,6 +43,55 @@ func (c *Capture) Start() error {
 	return nil
 }
 
+// handleConnectionError handles connection errors and returns updated state
+func (c *Capture) handleConnectionError(connected bool, disconnectTime time.Time, reconnectDelay time.Duration) (bool, time.Time) {
+	if connected {
+		if disconnectTime.IsZero() {
+			disconnectTime = time.Now()
+		}
+		connected = false
+	}
+	if !connected && !disconnectTime.IsZero() {
+		// Only sleep and retry if we are not connected
+		time.Sleep(reconnectDelay)
+	}
+	return connected, disconnectTime
+}
+
+// configureTCPKeepalive configures TCP keepalive settings
+func (c *Capture) configureTCPKeepalive(conn net.Conn, source string) {
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		if err := tcpConn.SetKeepAlive(true); err != nil {
+			fmt.Printf("Warning: failed to set keepalive for %s: %v\n", source, err)
+		}
+		if err := tcpConn.SetKeepAlivePeriod(2 * time.Second); err != nil {
+			fmt.Printf("Warning: failed to set keepalive period for %s: %v\n", source, err)
+		}
+		if err := tcpConn.SetNoDelay(true); err != nil {
+			fmt.Printf("Warning: failed to set no delay for %s: %v\n", source, err)
+		}
+	}
+}
+
+// handleSuccessfulConnection handles successful connection logic
+func (c *Capture) handleSuccessfulConnection(connected bool, disconnectTime time.Time, source string) (bool, time.Time) {
+	if !connected {
+		if !disconnectTime.IsZero() {
+			duration := time.Since(disconnectTime)
+			if duration >= 100*time.Millisecond && duration < 10*time.Second {
+				fmt.Printf("A connection hiccup of %.1f seconds happened.\n", duration.Seconds())
+			} else if duration >= 10*time.Second {
+				fmt.Printf("Connection to %s reestablished after %.1f minutes\n", source, duration.Minutes())
+			}
+			disconnectTime = time.Time{} // Reset disconnect time
+		} else {
+			fmt.Printf("Successfully connected to %s\n", source)
+		}
+		connected = true
+	}
+	return connected, disconnectTime
+}
+
 // Stop gracefully stops the capture
 func (c *Capture) Stop() {
 	close(c.stopChan)
@@ -80,40 +129,14 @@ func (c *Capture) connectToSource(source string) {
 
 			conn, err := net.Dial("tcp", source)
 			if err != nil {
-				if connected {
-					if disconnectTime.IsZero() {
-						disconnectTime = time.Now()
-					}
-					connected = false
-				}
-				if !connected && !disconnectTime.IsZero() {
-					// Only sleep and retry if we are not connected
-					time.Sleep(reconnectDelay)
-				}
+				connected, disconnectTime = c.handleConnectionError(connected, disconnectTime, reconnectDelay)
 				continue
 			}
 
 			// Configure TCP keepalive
-			if tcpConn, ok := conn.(*net.TCPConn); ok {
-				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(2 * time.Second)
-				tcpConn.SetNoDelay(true)
-			}
+			c.configureTCPKeepalive(conn, source)
 
-			if !connected {
-				if !disconnectTime.IsZero() {
-					duration := time.Since(disconnectTime)
-					if duration >= 100*time.Millisecond && duration < 10*time.Second {
-						fmt.Printf("A connection hiccup of %.1f seconds happened.\n", duration.Seconds())
-					} else if duration >= 10*time.Second {
-						fmt.Printf("Connection to %s reestablished after %.1f minutes\n", source, duration.Minutes())
-					}
-					disconnectTime = time.Time{} // Reset disconnect time
-				} else {
-					fmt.Printf("Successfully connected to %s\n", source)
-				}
-				connected = true
-			}
+			connected, disconnectTime = c.handleSuccessfulConnection(connected, disconnectTime, source)
 
 			c.mu.Lock()
 			c.conns[source] = conn
@@ -146,7 +169,9 @@ func (c *Capture) handleConnection(source string, conn net.Conn) {
 			return
 		default:
 			// Set a read deadline of 2 seconds
-			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				fmt.Printf("Warning: failed to set read deadline for %s: %v\n", source, err)
+			}
 
 			n, err := conn.Read(buffer)
 			if err != nil {
@@ -156,14 +181,18 @@ func (c *Capture) handleConnection(source string, conn net.Conn) {
 						return
 					}
 					// Reset the deadline and continue
-					conn.SetReadDeadline(time.Time{})
+					if err := conn.SetReadDeadline(time.Time{}); err != nil {
+						fmt.Printf("Warning: failed to reset read deadline for %s: %v\n", source, err)
+					}
 					continue
 				}
 				return
 			}
 
 			// Reset the read deadline
-			conn.SetReadDeadline(time.Time{})
+			if err := conn.SetReadDeadline(time.Time{}); err != nil {
+				fmt.Printf("Warning: failed to reset read deadline for %s: %v\n", source, err)
+			}
 
 			// Update last message time
 			lastMessageTime = time.Now()

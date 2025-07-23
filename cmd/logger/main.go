@@ -28,19 +28,21 @@ func main() {
 
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		log.Fatalf("Failed to create output directory: %v", err)
+		log.Printf("Failed to create output directory: %v", err)
+		os.Exit(1)
 	}
 
 	// Create NATS client
 	client, err := nats.New(natsURL)
 	if err != nil {
-		log.Fatalf("Failed to create NATS client: %v", err)
+		log.Printf("Failed to create NATS client: %v", err)
+		os.Exit(1)
 	}
-	defer client.Close()
+	// Note: client.Close() will be called in the shutdown handler
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Note: cancel() will be called in the shutdown handler
 
 	// Start the logger
 	logger := NewLogger(outputDir)
@@ -52,7 +54,8 @@ func main() {
 			log.Printf("Failed to write message: %v", err)
 		}
 	}); err != nil {
-		log.Fatalf("Failed to subscribe to SBS messages: %v", err)
+		log.Printf("Failed to subscribe to SBS messages: %v", err)
+		os.Exit(1)
 	}
 
 	// Wait for shutdown signal
@@ -61,7 +64,8 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down...")
-	cancel()
+	client.Close()          // Close client before canceling context
+	cancel()                // Cancel context after closing client
 	time.Sleep(time.Second) // Give time for goroutines to clean up
 }
 
