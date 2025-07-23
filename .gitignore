@@ -1,3 +1,18 @@
 .env
 logs/
 sbs-logger
+
+# Build artifacts
+bin/
+coverage.out
+coverage.html
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
