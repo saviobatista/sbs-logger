@@ -321,7 +321,18 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down...")
-	natsClient.Close()
-	dbClient.Close()
-	redisClient.Close()
+	// Fix: only check error returns for dbClient and redisClient, not natsClient
+	if natsClient != nil {
+		natsClient.Close()
+	}
+	if dbClient != nil {
+		if err := dbClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
+		}
+	}
+	if redisClient != nil {
+		if err := redisClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing redisClient: %v\n", err)
+		}
+	}
 }

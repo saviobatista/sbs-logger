@@ -2,6 +2,8 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/lib/pq"
@@ -39,7 +41,11 @@ func (c *Client) GetActiveFlights() ([]*types.Flight, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing rows: %v\n", cerr)
+		}
+	}()
 
 	var flights []*types.Flight
 	for rows.Next() {
@@ -174,7 +180,11 @@ func (c *Client) GetSystemStats(start, end time.Time) ([]map[string]interface{},
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing rows: %v\n", cerr)
+		}
+	}()
 
 	var stats []map[string]interface{}
 	for rows.Next() {

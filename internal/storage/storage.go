@@ -47,7 +47,9 @@ func (s *Storage) Stop() error {
 	defer s.mu.Unlock()
 
 	if s.file != nil {
-		return s.file.Close()
+		if err := s.file.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing file: %v\n", err)
+		}
 	}
 	return nil
 }
@@ -123,21 +125,33 @@ func (s *Storage) compressFile(filepath string) error {
 	// Open the source file
 	source, err := os.Open(filepath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open source file: %w", err)
 	}
-	defer source.Close()
+	defer func() {
+		if cerr := source.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing source file: %v\n", cerr)
+		}
+	}()
 
 	// Create the compressed file
 	compressedFile := filepath + ".gz"
 	target, err := os.Create(compressedFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create target file: %w", err)
 	}
-	defer target.Close()
+	defer func() {
+		if cerr := target.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing target file: %v\n", cerr)
+		}
+	}()
 
 	// Create gzip writer
 	gzipWriter := gzip.NewWriter(target)
-	defer gzipWriter.Close()
+	defer func() {
+		if cerr := gzipWriter.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing gzip writer: %v\n", cerr)
+		}
+	}()
 
 	// Copy the contents
 	if _, err := gzipWriter.Write([]byte{}); err != nil {
@@ -158,9 +172,9 @@ func (s *Storage) rotateFile() error {
 	timestamp := time.Now().UTC().Format("2006-01-02")
 	filename := filepath.Join(s.outputDir, fmt.Sprintf("sbs_%s.log", timestamp))
 
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
-		return fmt.Errorf("failed to create log file: %w", err)
+		return fmt.Errorf("failed to open file: %w", err)
 	}
 
 	s.file = file

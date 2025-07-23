@@ -76,7 +76,11 @@ func connectAndIngest(ctx context.Context, source string, client *nats.Client) e
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing conn: %v\n", err)
+		}
+	}()
 
 	log.Printf("Connected to source: %s", source)
 
