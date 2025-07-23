@@ -237,7 +237,7 @@ jobs:
           timeout 60 bash -c 'until pg_isready -h localhost -p 5432; do sleep 1; done'
           
           echo "Waiting for Redis..."
-          timeout 60 bash -c 'until redis-cli -h localhost ping; do sleep 1; done'
+          timeout 60 bash -c 'until timeout 1 bash -c "</dev/tcp/127.0.0.1/6379" 2>/dev/null; do sleep 1; done'
           
           echo "Waiting for NATS..."
           timeout 60 bash -c 'until timeout 1 bash -c "</dev/tcp/127.0.0.1/4222" 2>/dev/null; do sleep 1; done'
