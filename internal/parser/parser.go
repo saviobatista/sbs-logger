@@ -33,8 +33,18 @@ func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error)
 		return nil, fmt.Errorf("invalid message format: expected at least 22 fields, got %d", len(fields))
 	}
 
+	// Check if message starts with "MSG" (SBS format)
+	msgTypeIndex := 0
+	if len(fields) > 0 && fields[0] == "MSG" {
+		// SBS format: MSG,type,transmission_type,session_id,aircraft_id,hex_ident,flight_id,...
+		if len(fields) < 23 {
+			return nil, fmt.Errorf("invalid SBS message format: expected at least 23 fields, got %d", len(fields))
+		}
+		msgTypeIndex = 1 // Message type is at index 1 after "MSG"
+	}
+
 	// Parse message type
-	msgType, err := strconv.Atoi(fields[0])
+	msgType, err := strconv.Atoi(fields[msgTypeIndex])
 	if err != nil {
 		return nil, fmt.Errorf("invalid message type: %w", err)
 	}
@@ -52,60 +62,60 @@ func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error)
 		return nil, nil
 
 	case MsgTypeNewID:
-		state.HexIdent = fields[4]
+		state.HexIdent = fields[4+msgTypeIndex]
 
 	case MsgTypeNewCallSign:
-		state.HexIdent = fields[4]
-		state.Callsign = fields[10]
+		state.HexIdent = fields[4+msgTypeIndex]
+		state.Callsign = fields[10+msgTypeIndex]
 
 	case MsgTypeNewAltitude:
-		state.HexIdent = fields[4]
-		if alt, err := strconv.Atoi(fields[11]); err == nil {
+		state.HexIdent = fields[4+msgTypeIndex]
+		if alt, err := strconv.Atoi(fields[11+msgTypeIndex]); err == nil {
 			state.Altitude = alt
 		}
 
 	case MsgTypeNewGroundSpeed:
-		state.HexIdent = fields[4]
-		if speed, err := strconv.ParseFloat(fields[12], 64); err == nil {
+		state.HexIdent = fields[4+msgTypeIndex]
+		if speed, err := strconv.ParseFloat(fields[12+msgTypeIndex], 64); err == nil {
 			state.GroundSpeed = speed
 		}
 
 	case MsgTypeNewTrack:
-		state.HexIdent = fields[4]
-		if track, err := strconv.ParseFloat(fields[13], 64); err == nil {
+		state.HexIdent = fields[4+msgTypeIndex]
+		if track, err := strconv.ParseFloat(fields[13+msgTypeIndex], 64); err == nil {
 			state.Track = track
 		}
 
 	case MsgTypeNewLatLon:
-		state.HexIdent = fields[4]
-		if lat, err := strconv.ParseFloat(fields[14], 64); err == nil {
+		state.HexIdent = fields[4+msgTypeIndex]
+		if lat, err := strconv.ParseFloat(fields[14+msgTypeIndex], 64); err == nil {
 			state.Latitude = lat
 		}
-		if lon, err := strconv.ParseFloat(fields[15], 64); err == nil {
+		if lon, err := strconv.ParseFloat(fields[15+msgTypeIndex], 64); err == nil {
 			state.Longitude = lon
 		}
-		if alt, err := strconv.Atoi(fields[11]); err == nil {
+		if alt, err := strconv.Atoi(fields[11+msgTypeIndex]); err == nil {
 			state.Altitude = alt
 		}
-		if speed, err := strconv.ParseFloat(fields[12], 64); err == nil {
+		if speed, err := strconv.ParseFloat(fields[12+msgTypeIndex], 64); err == nil {
 			state.GroundSpeed = speed
 		}
-		if track, err := strconv.ParseFloat(fields[13], 64); err == nil {
+		if track, err := strconv.ParseFloat(fields[13+msgTypeIndex], 64); err == nil {
 			state.Track = track
 		}
-		if vr, err := strconv.Atoi(fields[16]); err == nil {
+		if vr, err := strconv.Atoi(fields[16+msgTypeIndex]); err == nil {
 			state.VerticalRate = vr
 		}
-		if squawk, err := strconv.Atoi(fields[17]); err == nil {
+		if squawk, err := strconv.Atoi(fields[17+msgTypeIndex]); err == nil {
 			state.Squawk = fmt.Sprintf("%04d", squawk)
 		}
-		if onGround, err := strconv.Atoi(fields[21]); err == nil {
+		if onGround, err := strconv.Atoi(fields[21+msgTypeIndex]); err == nil {
 			state.OnGround = onGround == 1
 		}
 
 	case MsgTypeNewGround:
-		state.HexIdent = fields[4]
-		if onGround, err := strconv.Atoi(fields[21]); err == nil {
+		state.HexIdent = fields[4+msgTypeIndex]
+		if onGround, err := strconv.Atoi(fields[21+msgTypeIndex]); err == nil {
 			state.OnGround = onGround == 1
 		}
 

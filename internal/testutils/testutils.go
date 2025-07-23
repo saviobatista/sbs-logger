@@ -11,7 +11,7 @@ import (
 // MockSBSMessage creates a mock SBS message for testing
 func MockSBSMessage(msgType int, hexIdent string) *types.SBSMessage {
 	return &types.SBSMessage{
-		Raw:       fmt.Sprintf("%d,111,11111,111111,%s,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111", msgType, hexIdent),
+		Raw:       fmt.Sprintf("MSG,%d,111,11111,111111,%s,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111,111111", msgType, hexIdent),
 		Timestamp: time.Now().UTC(),
 		Source:    "test-source",
 	}
