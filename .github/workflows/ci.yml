@@ -219,11 +219,6 @@ jobs:
 
       nats:
         image: nats:latest
-        options: >-
-          --health-cmd "nats-server --help"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
         ports:
           - 4222:4222
 
@@ -245,7 +240,7 @@ jobs:
           timeout 60 bash -c 'until redis-cli -h localhost ping; do sleep 1; done'
           
           echo "Waiting for NATS..."
-          timeout 60 bash -c 'until nats-server --help > /dev/null 2>&1; do sleep 1; done'
+          timeout 60 bash -c 'until timeout 1 bash -c "</dev/tcp/127.0.0.1/4222" 2>/dev/null; do sleep 1; done'
 
       - name: Run integration tests
         run: |
