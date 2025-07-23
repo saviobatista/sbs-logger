@@ -16,12 +16,12 @@ type Message struct {
 
 // Capture represents a network capture instance
 type Capture struct {
-	sources   []string
-	conns     map[string]net.Conn
-	msgChan   chan Message
-	wg        sync.WaitGroup
-	stopChan  chan struct{}
-	mu        sync.Mutex
+	sources  []string
+	conns    map[string]net.Conn
+	msgChan  chan Message
+	wg       sync.WaitGroup
+	stopChan chan struct{}
+	mu       sync.Mutex
 }
 
 // New creates a new Capture instance
@@ -147,7 +147,7 @@ func (c *Capture) handleConnection(source string, conn net.Conn) {
 		default:
 			// Set a read deadline of 2 seconds
 			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-			
+
 			n, err := conn.Read(buffer)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -184,4 +184,4 @@ func (c *Capture) handleConnection(source string, conn net.Conn) {
 			}
 		}
 	}
-} 
+}

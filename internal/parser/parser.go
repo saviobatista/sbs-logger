@@ -15,14 +15,14 @@ type MessageType int
 const (
 	// SBS message types
 	MsgTypeSelectionChange MessageType = 1
-	MsgTypeNewAircraft    MessageType = 2
-	MsgTypeNewID          MessageType = 3
-	MsgTypeNewCallSign    MessageType = 4
-	MsgTypeNewAltitude    MessageType = 5
-	MsgTypeNewGroundSpeed MessageType = 6
-	MsgTypeNewTrack       MessageType = 7
-	MsgTypeNewLatLon      MessageType = 8
-	MsgTypeNewGround      MessageType = 9
+	MsgTypeNewAircraft     MessageType = 2
+	MsgTypeNewID           MessageType = 3
+	MsgTypeNewCallSign     MessageType = 4
+	MsgTypeNewAltitude     MessageType = 5
+	MsgTypeNewGroundSpeed  MessageType = 6
+	MsgTypeNewTrack        MessageType = 7
+	MsgTypeNewLatLon       MessageType = 8
+	MsgTypeNewGround       MessageType = 9
 )
 
 // ParseMessage parses a raw SBS message into an aircraft state
@@ -114,4 +114,4 @@ func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error)
 	}
 
 	return state, nil
-} 
+}

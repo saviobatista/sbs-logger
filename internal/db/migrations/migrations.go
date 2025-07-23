@@ -160,4 +160,4 @@ func (m *Migrator) Rollback(migrations []*Migration) error {
 
 	fmt.Printf("Rolled back migration: %s\n", lastMigration.Name)
 	return nil
-} 
+}

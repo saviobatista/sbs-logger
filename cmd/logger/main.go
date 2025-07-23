@@ -27,7 +27,7 @@ func main() {
 	}
 
 	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		log.Fatalf("Failed to create output directory: %v", err)
 	}
 
@@ -151,7 +151,7 @@ func (l *Logger) rotateFile() error {
 	logPath := filepath.Join(l.outputDir, fmt.Sprintf("sbs_%s.log", l.currentDate))
 
 	// Create new file
-	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to create log file: %w", err)
 	}
@@ -187,4 +187,4 @@ func compressFile(filePath string) error {
 	}
 
 	return nil
-} 
+}

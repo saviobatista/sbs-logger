@@ -133,4 +133,4 @@ func (c *Client) GetFlightValidation(ctx context.Context, hexIdent string) (bool
 	}
 
 	return val == "1", nil
-} 
+}

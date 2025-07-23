@@ -43,4 +43,4 @@ var RetentionPolicies = &Migration{
 	SELECT remove_retention_policy('aircraft_states');
 	SELECT remove_retention_policy('system_stats');
 	`,
-} 
+}
