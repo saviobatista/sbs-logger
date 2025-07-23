@@ -10,8 +10,8 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Sources    []string
-	OutputDir  string
+	Sources   []string
+	OutputDir string
 }
 
 // Load loads the configuration from environment variables and .env file
@@ -33,4 +33,4 @@ func Load() (*Config, error) {
 		Sources:   strings.Split(sources, ","),
 		OutputDir: outputDir,
 	}, nil
-} 
+}

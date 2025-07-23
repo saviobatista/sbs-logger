@@ -1,0 +1,59 @@
+name: Simple CI Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: '1.23.0'
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build binaries
+        run: |
+          mkdir -p bin
+          for service in ingestor logger tracker migrate; do
+            echo "Building $service..."
+            CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+              -ldflags="-w -s" \
+              -o bin/$service-linux-amd64 ./cmd/$service
+          done
+
+  docker-test:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test Docker builds
+        run: |
+          for service in ingestor logger tracker migrate; do
+            echo "Testing Docker build for $service..."
+            docker build -f Dockerfile.$service -t test-$service .
+          done 

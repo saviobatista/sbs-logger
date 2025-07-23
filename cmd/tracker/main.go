@@ -126,34 +126,34 @@ func (t *StateTracker) ProcessMessage(msg *types.SBSMessage) error {
 	return nil
 }
 
-// mergeStates merges new state into existing state
-func (t *StateTracker) mergeStates(existing, new *types.AircraftState) {
-	if new.Callsign != "" {
-		existing.Callsign = new.Callsign
+// mergeStates merges newState into existing state
+func (t *StateTracker) mergeStates(existing, newState *types.AircraftState) {
+	if newState.Callsign != "" {
+		existing.Callsign = newState.Callsign
 	}
-	if new.Altitude != 0 {
-		existing.Altitude = new.Altitude
+	if newState.Altitude != 0 {
+		existing.Altitude = newState.Altitude
 	}
-	if new.GroundSpeed != 0 {
-		existing.GroundSpeed = new.GroundSpeed
+	if newState.GroundSpeed != 0 {
+		existing.GroundSpeed = newState.GroundSpeed
 	}
-	if new.Track != 0 {
-		existing.Track = new.Track
+	if newState.Track != 0 {
+		existing.Track = newState.Track
 	}
-	if new.Latitude != 0 {
-		existing.Latitude = new.Latitude
+	if newState.Latitude != 0 {
+		existing.Latitude = newState.Latitude
 	}
-	if new.Longitude != 0 {
-		existing.Longitude = new.Longitude
+	if newState.Longitude != 0 {
+		existing.Longitude = newState.Longitude
 	}
-	if new.VerticalRate != 0 {
-		existing.VerticalRate = new.VerticalRate
+	if newState.VerticalRate != 0 {
+		existing.VerticalRate = newState.VerticalRate
 	}
-	if new.Squawk != "" {
-		existing.Squawk = new.Squawk
+	if newState.Squawk != "" {
+		existing.Squawk = newState.Squawk
 	}
-	existing.OnGround = new.OnGround
-	existing.Timestamp = new.Timestamp
+	existing.OnGround = newState.OnGround
+	existing.Timestamp = newState.Timestamp
 }
 
 // updateFlight updates or creates a flight session
@@ -268,28 +268,38 @@ func main() {
 	// Create NATS client
 	natsClient, err := nats.New(natsURL)
 	if err != nil {
-		log.Fatalf("Failed to create NATS client: %v", err)
+		log.Printf("Failed to create NATS client: %v", err)
+		os.Exit(1)
 	}
-	defer natsClient.Close()
+	// Note: natsClient.Close() will be called in the shutdown handler
 
 	// Create database client
 	dbClient, err := db.New(dbConnStr)
 	if err != nil {
-		log.Fatalf("Failed to create database client: %v", err)
+		log.Printf("Failed to create database client: %v", err)
+		natsClient.Close()
+		os.Exit(1)
 	}
-	defer dbClient.Close()
+	// Note: dbClient.Close() will be called in the shutdown handler
 
 	// Create Redis client
 	redisClient, err := redis.New(redisAddr)
 	if err != nil {
-		log.Fatalf("Failed to create Redis client: %v", err)
+		log.Printf("Failed to create Redis client: %v", err)
+		natsClient.Close()
+		dbClient.Close()
+		os.Exit(1)
 	}
-	defer redisClient.Close()
+	// Note: redisClient.Close() will be called in the shutdown handler
 
 	// Create state tracker
 	tracker := NewStateTracker(dbClient, redisClient)
 	if err := tracker.Start(context.Background()); err != nil {
-		log.Fatalf("Failed to start state tracker: %v", err)
+		log.Printf("Failed to start state tracker: %v", err)
+		natsClient.Close()
+		dbClient.Close()
+		redisClient.Close()
+		os.Exit(1)
 	}
 
 	// Subscribe to SBS messages
@@ -298,7 +308,11 @@ func main() {
 			log.Printf("Failed to process message: %v", err)
 		}
 	}); err != nil {
-		log.Fatalf("Failed to subscribe to SBS messages: %v", err)
+		log.Printf("Failed to subscribe to SBS messages: %v", err)
+		natsClient.Close()
+		dbClient.Close()
+		redisClient.Close()
+		os.Exit(1)
 	}
 
 	// Wait for shutdown signal
@@ -307,4 +321,7 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down...")
+	natsClient.Close()
+	dbClient.Close()
+	redisClient.Close()
 }

@@ -58,52 +58,49 @@ func (m *Migrator) GetAppliedMigrations() (map[string]bool, error) {
 	return applied, rows.Err()
 }
 
-// ApplyMigration applies a single migration
-func (m *Migrator) ApplyMigration(migration *Migration) error {
+// executeMigration executes a migration with common transaction logic
+func (m *Migrator) executeMigration(migration *Migration, sql, recordQuery string, recordArgs ...interface{}) error {
 	tx, err := m.db.Begin()
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err := tx.Rollback(); err != nil {
+			fmt.Printf("Warning: failed to rollback transaction: %v\n", err)
+		}
+	}()
 
-	// Apply the migration
-	if _, err := tx.Exec(migration.UpSQL); err != nil {
-		return fmt.Errorf("failed to apply migration %s: %w", migration.Name, err)
+	// Execute the migration
+	if _, err := tx.Exec(sql); err != nil {
+		return fmt.Errorf("failed to execute migration %s: %w", migration.Name, err)
 	}
 
 	// Record the migration
-	if _, err := tx.Exec(
-		"INSERT INTO migrations (name) VALUES ($1)",
-		migration.Name,
-	); err != nil {
+	if _, err := tx.Exec(recordQuery, recordArgs...); err != nil {
 		return fmt.Errorf("failed to record migration %s: %w", migration.Name, err)
 	}
 
 	return tx.Commit()
 }
 
+// ApplyMigration applies a single migration
+func (m *Migrator) ApplyMigration(migration *Migration) error {
+	return m.executeMigration(
+		migration,
+		migration.UpSQL,
+		"INSERT INTO migrations (name) VALUES ($1)",
+		migration.Name,
+	)
+}
+
 // RollbackMigration rolls back a single migration
 func (m *Migrator) RollbackMigration(migration *Migration) error {
-	tx, err := m.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Rollback the migration
-	if _, err := tx.Exec(migration.DownSQL); err != nil {
-		return fmt.Errorf("failed to rollback migration %s: %w", migration.Name, err)
-	}
-
-	// Remove the migration record
-	if _, err := tx.Exec(
+	return m.executeMigration(
+		migration,
+		migration.DownSQL,
 		"DELETE FROM migrations WHERE name = $1",
 		migration.Name,
-	); err != nil {
-		return fmt.Errorf("failed to remove migration record %s: %w", migration.Name, err)
-	}
-
-	return tx.Commit()
+	)
 }
 
 // Migrate applies all pending migrations
@@ -160,4 +157,4 @@ func (m *Migrator) Rollback(migrations []*Migration) error {
 
 	fmt.Printf("Rolled back migration: %s\n", lastMigration.Name)
 	return nil
-} 
+}

@@ -68,7 +68,7 @@ func (s *Storage) WriteMessage(message []byte) error {
 		_, err := s.file.Write(message)
 		return err
 	}
-	
+
 	_, err := s.file.Write(append(message, '\n'))
 	return err
 }
@@ -107,7 +107,7 @@ func (s *Storage) rotateAndCompress() error {
 	// Compress yesterday's file
 	yesterday := time.Now().UTC().AddDate(0, 0, -1)
 	yesterdayFile := filepath.Join(s.outputDir, fmt.Sprintf("sbs_%s.log", yesterday.Format("2006-01-02")))
-	
+
 	if _, err := os.Stat(yesterdayFile); err == nil {
 		if err := s.compressFile(yesterdayFile); err != nil {
 			return fmt.Errorf("failed to compress file: %w", err)
@@ -158,11 +158,11 @@ func (s *Storage) rotateFile() error {
 	timestamp := time.Now().UTC().Format("2006-01-02")
 	filename := filepath.Join(s.outputDir, fmt.Sprintf("sbs_%s.log", timestamp))
 
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to create log file: %w", err)
 	}
 
 	s.file = file
 	return nil
-} 
+}

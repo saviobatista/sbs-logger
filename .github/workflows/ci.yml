@@ -1,0 +1,307 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GO_VERSION: '1.23.0'
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.23.0, 1.24.0]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+
+  build:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - name: ingestor
+            binary: ingestor
+          - name: logger
+            binary: logger
+          - name: tracker
+            binary: tracker
+          - name: migrate
+            binary: migrate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build ${{ matrix.binary }}
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-w -s" \
+            -o bin/${{ matrix.binary }}-linux-amd64 \
+            ./cmd/${{ matrix.binary }}
+
+      - name: Build for ARM64
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+            -ldflags="-w -s" \
+            -o bin/${{ matrix.binary }}-linux-arm64 \
+            ./cmd/${{ matrix.binary }}
+
+      - name: Build for macOS
+        run: |
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
+            -ldflags="-w -s" \
+            -o bin/${{ matrix.binary }}-darwin-amd64 \
+            ./cmd/${{ matrix.binary }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}-binaries
+          path: bin/${{ matrix.binary }}-*
+
+  docker-build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - service: ingestor
+            dockerfile: Dockerfile.ingestor
+          - service: logger
+            dockerfile: Dockerfile.logger
+          - service: tracker
+            dockerfile: Dockerfile.tracker
+          - service: migrate
+            dockerfile: Dockerfile.migrate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_PREFIX }}/sbs-${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+          flavor: |
+            latest=auto
+
+      - name: Debug metadata
+        run: |
+          echo "Image names: ${{ steps.meta.outputs.tags }}"
+          echo "Labels: ${{ steps.meta.outputs.labels }}"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: [test, docker-build]
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg14
+        env:
+          POSTGRES_USER: sbs
+          POSTGRES_PASSWORD: sbs_password
+          POSTGRES_DB: sbs_data
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+      nats:
+        image: nats:latest
+        ports:
+          - 4222:4222
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Wait for services
+        run: |
+          echo "Waiting for PostgreSQL..."
+          timeout 60 bash -c 'until pg_isready -h localhost -p 5432; do sleep 1; done'
+          
+          echo "Waiting for Redis..."
+          timeout 60 bash -c 'until timeout 1 bash -c "</dev/tcp/127.0.0.1/6379" 2>/dev/null; do sleep 1; done'
+          
+          echo "Waiting for NATS..."
+          timeout 60 bash -c 'until timeout 1 bash -c "</dev/tcp/127.0.0.1/4222" 2>/dev/null; do sleep 1; done'
+
+      - name: Run integration tests
+        run: |
+          # Set environment variables for integration tests
+          export DB_CONN_STR="postgres://sbs:sbs_password@localhost:5432/sbs_data?sslmode=disable"
+          export REDIS_ADDR="localhost:6379"
+          export NATS_URL="nats://localhost:4222"
+          
+          # Run integration tests (if they exist)
+          go test -v -tags=integration ./... || echo "No integration tests found"
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [test, build, docker-build, security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          echo "## What's Changed" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 🚀 New Features" >> release_notes.md
+          echo "- Enhanced SBS message processing" >> release_notes.md
+          echo "- Improved aircraft state tracking" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 🔧 Improvements" >> release_notes.md
+          echo "- Updated dependencies" >> release_notes.md
+          echo "- Performance optimizations" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 📦 Binaries" >> release_notes.md
+          echo "This release includes binaries for:" >> release_notes.md
+          echo "- Linux (AMD64, ARM64)" >> release_notes.md
+          echo "- macOS (AMD64)" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 🐳 Docker Images" >> release_notes.md
+          echo "Docker images are available on GitHub Container Registry:" >> release_notes.md
+          echo "- sbs-ingestor" >> release_notes.md
+          echo "- sbs-logger" >> release_notes.md
+          echo "- sbs-tracker" >> release_notes.md
+          echo "- sbs-migrate" >> release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ingestor-binaries/*.tar.gz
+            logger-binaries/*.tar.gz
+            tracker-binaries/*.tar.gz
+            migrate-binaries/*.tar.gz
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true 

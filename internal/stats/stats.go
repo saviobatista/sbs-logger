@@ -13,13 +13,13 @@ import (
 // Stats tracks message processing statistics
 type Stats struct {
 	// Message counts
-	TotalMessages     uint64
-	ParsedMessages    uint64
-	FailedMessages    uint64
-	StoredStates      uint64
-	CreatedFlights    uint64
-	UpdatedFlights    uint64
-	EndedFlights      uint64
+	TotalMessages  uint64
+	ParsedMessages uint64
+	FailedMessages uint64
+	StoredStates   uint64
+	CreatedFlights uint64
+	UpdatedFlights uint64
+	EndedFlights   uint64
 
 	// Message type counts
 	MessageTypeCounts [10]uint64 // Index corresponds to message type
@@ -137,18 +137,18 @@ func (s *Stats) GetStats() map[string]interface{} {
 	defer s.mu.RUnlock()
 
 	return map[string]interface{}{
-		"total_messages":     atomic.LoadUint64(&s.TotalMessages),
-		"parsed_messages":    atomic.LoadUint64(&s.ParsedMessages),
-		"failed_messages":    atomic.LoadUint64(&s.FailedMessages),
-		"stored_states":      atomic.LoadUint64(&s.StoredStates),
-		"created_flights":    atomic.LoadUint64(&s.CreatedFlights),
-		"updated_flights":    atomic.LoadUint64(&s.UpdatedFlights),
-		"ended_flights":      atomic.LoadUint64(&s.EndedFlights),
-		"active_aircraft":    atomic.LoadUint64(&s.ActiveAircraft),
-		"active_flights":     atomic.LoadUint64(&s.ActiveFlights),
-		"message_types":      s.MessageTypeCounts,
-		"last_message_time":  s.LastMessageTime,
-		"processing_time":    s.ProcessingTime,
+		"total_messages":    atomic.LoadUint64(&s.TotalMessages),
+		"parsed_messages":   atomic.LoadUint64(&s.ParsedMessages),
+		"failed_messages":   atomic.LoadUint64(&s.FailedMessages),
+		"stored_states":     atomic.LoadUint64(&s.StoredStates),
+		"created_flights":   atomic.LoadUint64(&s.CreatedFlights),
+		"updated_flights":   atomic.LoadUint64(&s.UpdatedFlights),
+		"ended_flights":     atomic.LoadUint64(&s.EndedFlights),
+		"active_aircraft":   atomic.LoadUint64(&s.ActiveAircraft),
+		"active_flights":    atomic.LoadUint64(&s.ActiveFlights),
+		"message_types":     s.MessageTypeCounts,
+		"last_message_time": s.LastMessageTime,
+		"processing_time":   s.ProcessingTime,
 		"uptime":            time.Since(s.LastMessageTime),
 	}
 }
@@ -203,4 +203,4 @@ func (s *Stats) StartPersistence(ctx context.Context, interval time.Duration) {
 			}
 		}
 	}
-} 
+}

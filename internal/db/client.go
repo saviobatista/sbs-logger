@@ -125,7 +125,11 @@ func (c *Client) StoreSystemStats(stats map[string]interface{}) error {
 	msgTypes := stats["message_types"].([10]uint64)
 	msgTypesArray := make([]int64, len(msgTypes))
 	for i, v := range msgTypes {
-		msgTypesArray[i] = int64(v)
+		if v > uint64(1<<63-1) {
+			msgTypesArray[i] = int64(1<<63 - 1) // Max int64 value
+		} else {
+			msgTypesArray[i] = int64(v)
+		}
 	}
 
 	// Convert processing time to milliseconds
@@ -212,7 +216,11 @@ func (c *Client) GetSystemStats(start, end time.Time) ([]map[string]interface{},
 		msgTypes := [10]uint64{}
 		for i, v := range messageTypes {
 			if i < len(msgTypes) {
-				msgTypes[i] = uint64(v)
+				if v < 0 {
+					msgTypes[i] = 0 // Min uint64 value
+				} else {
+					msgTypes[i] = uint64(v)
+				}
 			}
 		}
 

@@ -83,4 +83,4 @@ var InitialSchema = &Migration{
 		DROP TABLE IF EXISTS aircraft_states;
 	`,
 	CreatedAt: time.Now(),
-} 
+}
