@@ -3,6 +3,7 @@ package migrations
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -45,7 +46,11 @@ func (m *Migrator) GetAppliedMigrations() (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing rows: %v\n", cerr)
+		}
+	}()
 
 	applied := make(map[string]bool)
 	for rows.Next() {

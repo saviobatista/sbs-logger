@@ -287,7 +287,9 @@ func main() {
 	if err != nil {
 		log.Printf("Failed to create Redis client: %v", err)
 		natsClient.Close()
-		dbClient.Close()
+		if err := dbClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
+		}
 		os.Exit(1)
 	}
 	// Note: redisClient.Close() will be called in the shutdown handler
@@ -297,8 +299,12 @@ func main() {
 	if err := tracker.Start(context.Background()); err != nil {
 		log.Printf("Failed to start state tracker: %v", err)
 		natsClient.Close()
-		dbClient.Close()
-		redisClient.Close()
+		if err := dbClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
+		}
+		if err := redisClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing redisClient: %v\n", err)
+		}
 		os.Exit(1)
 	}
 
@@ -310,8 +316,12 @@ func main() {
 	}); err != nil {
 		log.Printf("Failed to subscribe to SBS messages: %v", err)
 		natsClient.Close()
-		dbClient.Close()
-		redisClient.Close()
+		if err := dbClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
+		}
+		if err := redisClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing redisClient: %v\n", err)
+		}
 		os.Exit(1)
 	}
 
@@ -321,7 +331,12 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down...")
+	// Fix: call natsClient.Close() without error check
 	natsClient.Close()
-	dbClient.Close()
-	redisClient.Close()
+	if err := dbClient.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
+	}
+	if err := redisClient.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "error closing redisClient: %v\n", err)
+	}
 }

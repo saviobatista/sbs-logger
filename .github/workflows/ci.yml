@@ -36,11 +36,12 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.3.0
+
       - name: Run linter
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: latest
-          args: --timeout=5m
+        run: golangci-lint run --timeout=5m
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out ./...
@@ -253,10 +254,45 @@ jobs:
           # Run integration tests (if they exist)
           go test -v -tags=integration ./... || echo "No integration tests found"
 
-  release:
-    name: Create Release
+  version:
+    name: Determine Version
     runs-on: ubuntu-latest
     needs: [test, build, docker-build, security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      version: ${{ steps.semantic.outputs.release_version }}
+      tag: ${{ steps.semantic.outputs.release_tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Semantic Release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          semantic_version: 21
+          branches: |
+            [
+              "main"
+            ]
+          extra_plugins: |
+            @semantic-release/git
+            @semantic-release/github
+
+  release:
+    name: Create Release Assets
+    runs-on: ubuntu-latest
+    needs: [version]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
@@ -269,40 +305,54 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: Generate release notes
-        id: release_notes
+      - name: Create release assets
         run: |
-          echo "## What's Changed" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "### 🚀 New Features" >> release_notes.md
-          echo "- Enhanced SBS message processing" >> release_notes.md
-          echo "- Improved aircraft state tracking" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "### 🔧 Improvements" >> release_notes.md
-          echo "- Updated dependencies" >> release_notes.md
-          echo "- Performance optimizations" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "### 📦 Binaries" >> release_notes.md
-          echo "This release includes binaries for:" >> release_notes.md
-          echo "- Linux (AMD64, ARM64)" >> release_notes.md
-          echo "- macOS (AMD64)" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "### 🐳 Docker Images" >> release_notes.md
-          echo "Docker images are available on GitHub Container Registry:" >> release_notes.md
-          echo "- sbs-ingestor" >> release_notes.md
-          echo "- sbs-logger" >> release_notes.md
-          echo "- sbs-tracker" >> release_notes.md
-          echo "- sbs-migrate" >> release_notes.md
+          VERSION="${{ needs.version.outputs.version }}"
+          TAG="${{ needs.version.outputs.tag }}"
+          
+          # Create release assets directory
+          mkdir -p release-assets
+          
+          # Package binaries
+          for binary in ingestor logger tracker migrate; do
+            if [ -d "${binary}-binaries" ]; then
+              tar -czf "release-assets/${binary}-${VERSION}-binaries.tar.gz" -C "${binary}-binaries" .
+            fi
+          done
+          
+          # Upload assets to the release created by semantic-release
+          gh release upload $TAG release-assets/*.tar.gz --clobber
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ingestor-binaries/*.tar.gz
-            logger-binaries/*.tar.gz
-            tracker-binaries/*.tar.gz
-            migrate-binaries/*.tar.gz
-          body_path: release_notes.md
-          draft: false
-          prerelease: false
-          generate_release_notes: true 
+      - name: Update release description
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          TAG="${{ needs.version.outputs.tag }}"
+          
+          # Create enhanced release notes
+          cat > release_notes.md << EOF
+          ## Release $TAG
+          
+          ### 🚀 What's New
+          - Automated release with semantic versioning
+          - Enhanced SBS message processing
+          - Improved aircraft state tracking
+          
+          ### 🔧 Improvements
+          - Updated dependencies
+          - Performance optimizations
+          
+          ### 📦 Binaries
+          This release includes binaries for:
+          - Linux (AMD64, ARM64)
+          - macOS (AMD64)
+          
+          ### 🐳 Docker Images
+          Docker images are available on GitHub Container Registry:
+          - sbs-ingestor:$TAG
+          - sbs-logger:$TAG
+          - sbs-tracker:$TAG
+          - sbs-migrate:$TAG
+          EOF
+          
+          # Update the release description
+          gh release edit $TAG --notes-file release_notes.md 

@@ -1,5 +1,17 @@
 # SBS Logger
 
+[![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/savio/sbs-logger)](https://goreportcard.com/report/github.com/savio/sbs-logger)
+[![Code Coverage](https://codecov.io/gh/savio/sbs-logger/branch/main/graph/badge.svg)](https://codecov.io/gh/savio/sbs-logger)
+[![Security Scan](https://github.com/savio/sbs-logger/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/savio/sbs-logger/actions/workflows/ci.yml)
+[![Docker Build](https://img.shields.io/badge/Docker-Build%20Passing-brightgreen.svg)](https://github.com/savio/sbs-logger/actions/workflows/ci.yml)
+[![Trivy Security](https://img.shields.io/badge/Trivy-Security%20Scan-brightgreen.svg)](https://github.com/savio/sbs-logger/actions/workflows/ci.yml)
+[![Go Modules](https://img.shields.io/badge/Go%20Modules-Go%201.23+-blue.svg)](go.mod)
+[![Dependabot](https://img.shields.io/badge/Dependabot-Enabled-brightgreen.svg)](https://github.com/savio/sbs-logger/security/dependabot)
+[![GitHub Issues](https://img.shields.io/github/issues/savio/sbs-logger)](https://github.com/savio/sbs-logger/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/savio/sbs-logger)](https://github.com/savio/sbs-logger/pulls)
+
 A high-performance, distributed Go application for capturing, processing, and storing SBS (BaseStation) messages from ADS-B receivers. The system provides real-time aircraft tracking, flight session management, and comprehensive data persistence with TimescaleDB.
 
 ## 🚀 Features
@@ -13,6 +25,20 @@ A high-performance, distributed Go application for capturing, processing, and st
 - **Comprehensive Logging**: Daily log rotation with automatic compression
 - **Statistics & Monitoring**: Real-time system metrics and performance tracking
 - **Docker Support**: Complete containerized deployment with docker-compose
+
+## 🛡️ Quality & Security
+
+This project maintains high code quality and security standards through automated checks:
+
+- **🔍 Code Quality**: Automated linting with golangci-lint
+- **🧪 Testing**: Comprehensive unit and integration tests with race condition detection
+- **📊 Code Coverage**: Continuous coverage tracking with Codecov
+- **🔒 Security Scanning**: Automated vulnerability scanning with Trivy
+- **🐳 Container Security**: Docker image scanning and multi-platform builds
+- **📋 Go Report Card**: Code quality analysis and grading
+- **🔄 CI/CD**: Automated testing, building, and deployment pipeline
+
+For detailed information about badge setup and maintenance, see [Badges Setup Guide](docs/badges-setup.md).
 
 ## 🏗️ Architecture
 

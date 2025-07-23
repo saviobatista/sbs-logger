@@ -27,7 +27,7 @@ func main() {
 	}
 
 	// Create output directory if it doesn't exist
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		log.Printf("Failed to create output directory: %v", err)
 		os.Exit(1)
 	}
@@ -155,9 +155,10 @@ func (l *Logger) rotateFile() error {
 	logPath := filepath.Join(l.outputDir, fmt.Sprintf("sbs_%s.log", l.currentDate))
 
 	// Create new file
-	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	//nolint:gosec // logPath is controlled by application logic
+	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("failed to create log file: %w", err)
+		return fmt.Errorf("failed to open log file: %w", err)
 	}
 
 	l.currentFile = file
@@ -167,6 +168,7 @@ func (l *Logger) rotateFile() error {
 // compressFile compresses a log file using gzip
 func compressFile(filePath string) error {
 	// Read the file
+	//nolint:gosec // filePath is controlled by application logic
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
@@ -174,11 +176,16 @@ func compressFile(filePath string) error {
 
 	// Create compressed file
 	compressedPath := filePath + ".gz"
+	//nolint:gosec // compressedPath is controlled by application logic
 	compressedFile, err := os.Create(compressedPath)
 	if err != nil {
 		return fmt.Errorf("failed to create compressed file: %w", err)
 	}
-	defer compressedFile.Close()
+	defer func() {
+		if cerr := compressedFile.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing compressed file: %v\n", cerr)
+		}
+	}()
 
 	// Write compressed data
 	if _, err := compressedFile.Write(data); err != nil {

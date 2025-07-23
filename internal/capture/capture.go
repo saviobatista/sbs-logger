@@ -3,6 +3,7 @@ package capture
 import (
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"time"
 )
@@ -97,7 +98,9 @@ func (c *Capture) Stop() {
 	close(c.stopChan)
 	c.mu.Lock()
 	for _, conn := range c.conns {
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing conn: %v\n", err)
+		}
 	}
 	c.mu.Unlock()
 	c.wg.Wait()
@@ -158,7 +161,11 @@ func (c *Capture) connectToSource(source string) {
 }
 
 func (c *Capture) handleConnection(source string, conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing conn: %v\n", err)
+		}
+	}()
 
 	buffer := make([]byte, 1024)
 	lastMessageTime := time.Now()

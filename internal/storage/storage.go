@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -47,7 +48,9 @@ func (s *Storage) Stop() error {
 	defer s.mu.Unlock()
 
 	if s.file != nil {
-		return s.file.Close()
+		if err := s.file.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing file: %v\n", err)
+		}
 	}
 	return nil
 }
@@ -100,7 +103,9 @@ func (s *Storage) rotateAndCompress() error {
 
 	// Close current file
 	if s.file != nil {
-		s.file.Close()
+		if err := s.file.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing file: %v\n", err)
+		}
 		s.file = nil
 	}
 
@@ -118,26 +123,70 @@ func (s *Storage) rotateAndCompress() error {
 	return s.rotateFile()
 }
 
+// validatePath ensures the path is within the output directory
+func (s *Storage) validatePath(path string) error {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+
+	absOutputDir, err := filepath.Abs(s.outputDir)
+	if err != nil {
+		return fmt.Errorf("invalid output directory: %w", err)
+	}
+
+	// Use strings.HasPrefix for proper path validation
+	absOutputDirWithSep := absOutputDir + string(os.PathSeparator)
+	if !strings.HasPrefix(absPath, absOutputDirWithSep) && absPath != absOutputDir {
+		return fmt.Errorf("path outside output directory: %s", path)
+	}
+
+	return nil
+}
+
 // compressFile compresses a file using gzip
 func (s *Storage) compressFile(filepath string) error {
+	// Validate the file path
+	if err := s.validatePath(filepath); err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+
 	// Open the source file
+	//nolint:gosec // Path is validated above
 	source, err := os.Open(filepath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open source file: %w", err)
 	}
-	defer source.Close()
+	defer func() {
+		if cerr := source.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing source file: %v\n", cerr)
+		}
+	}()
 
 	// Create the compressed file
 	compressedFile := filepath + ".gz"
+	if err := s.validatePath(compressedFile); err != nil {
+		return fmt.Errorf("invalid compressed file path: %w", err)
+	}
+
+	//nolint:gosec // Path is validated above
 	target, err := os.Create(compressedFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create target file: %w", err)
 	}
-	defer target.Close()
+	defer func() {
+		if cerr := target.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing target file: %v\n", cerr)
+		}
+	}()
 
 	// Create gzip writer
 	gzipWriter := gzip.NewWriter(target)
-	defer gzipWriter.Close()
+	defer func() {
+		if cerr := gzipWriter.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "error closing gzip writer: %v\n", cerr)
+		}
+	}()
 
 	// Copy the contents
 	if _, err := gzipWriter.Write([]byte{}); err != nil {
@@ -158,9 +207,15 @@ func (s *Storage) rotateFile() error {
 	timestamp := time.Now().UTC().Format("2006-01-02")
 	filename := filepath.Join(s.outputDir, fmt.Sprintf("sbs_%s.log", timestamp))
 
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// Validate the file path
+	if err := s.validatePath(filename); err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+
+	//nolint:gosec // Path is validated above
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
-		return fmt.Errorf("failed to create log file: %w", err)
+		return fmt.Errorf("failed to open file: %w", err)
 	}
 
 	s.file = file
