@@ -19,9 +19,68 @@ env:
   DOCKERHUB_NAMESPACE: 'saviobatista'  # Docker Hub username
 
 jobs:
+  validate-release:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.validate.outputs.should_publish }}
+      release_version: ${{ steps.validate.outputs.release_version }}
+      release_tag: ${{ steps.validate.outputs.release_tag }}
+
+    steps:
+      - name: Validate release version
+        id: validate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual dispatch
+            VERSION="${{ github.event.inputs.version }}"
+            if [ "$VERSION" = "latest" ]; then
+              echo "Manual dispatch with 'latest' - publishing as latest"
+              echo "should_publish=true" >> $GITHUB_OUTPUT
+              echo "release_version=latest" >> $GITHUB_OUTPUT
+              echo "release_tag=latest" >> $GITHUB_OUTPUT
+            else
+              # Remove 'v' prefix if present
+              CLEAN_VERSION="${VERSION#v}"
+              if [[ "$CLEAN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "Manual dispatch with valid version: $CLEAN_VERSION"
+                echo "should_publish=true" >> $GITHUB_OUTPUT
+                echo "release_version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+                echo "release_tag=v$CLEAN_VERSION" >> $GITHUB_OUTPUT
+              else
+                echo "Manual dispatch with invalid version: $VERSION"
+                echo "should_publish=false" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+            fi
+          else
+            # Release event
+            RELEASE_TAG="${{ github.event.release.tag_name }}"
+            echo "Release tag: $RELEASE_TAG"
+            
+            if [ -z "$RELEASE_TAG" ]; then
+              echo "No release tag found - skipping publish"
+              echo "should_publish=false" >> $GITHUB_OUTPUT
+            else
+              # Remove 'v' prefix if present
+              CLEAN_VERSION="${RELEASE_TAG#v}"
+              if [[ "$CLEAN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "Valid release version: $CLEAN_VERSION"
+                echo "should_publish=true" >> $GITHUB_OUTPUT
+                echo "release_version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
+                echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+              else
+                echo "Invalid release version format: $RELEASE_TAG - skipping publish"
+                echo "should_publish=false" >> $GITHUB_OUTPUT
+              fi
+            fi
+          fi
+
   dockerhub-publish:
     name: Publish to Docker Hub
     runs-on: ubuntu-latest
+    needs: [validate-release]
+    if: needs.validate-release.outputs.should_publish == 'true'
     strategy:
       matrix:
         include:
@@ -57,8 +116,7 @@ jobs:
         with:
           images: ${{ env.DOCKERHUB_NAMESPACE }}/sbs-${{ matrix.service }}
           tags: |
-            type=ref,event=release
-            type=raw,value=${{ github.event.inputs.version || 'latest' }}
+            type=raw,value=${{ needs.validate-release.outputs.release_tag }}
             type=raw,value=latest,enable={{is_default_branch}}
           flavor: |
             latest=auto
@@ -67,7 +125,7 @@ jobs:
             org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.vendor=Savio
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ needs.validate-release.outputs.release_version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ steps.meta.outputs.created }}
 
@@ -93,12 +151,12 @@ jobs:
   notify:
     name: Notify Success
     runs-on: ubuntu-latest
-    needs: dockerhub-publish
+    needs: [validate-release, dockerhub-publish]
     if: always()
     
     steps:
       - name: Notify on success
-        if: needs.dockerhub-publish.result == 'success'
+        if: needs.validate-release.outputs.should_publish == 'true' && needs.dockerhub-publish.result == 'success'
         run: |
           echo "✅ Successfully published all images to Docker Hub!"
           echo "📦 Images published:"
@@ -106,11 +164,18 @@ jobs:
           echo "  - saviobatista/sbs-logger"
           echo "  - saviobatista/sbs-tracker"
           echo "  - saviobatista/sbs-migrate"
-          echo "🏷️  Tags: ${{ github.ref_name }}, latest"
+          echo "🏷️  Tags: ${{ needs.validate-release.outputs.release_tag }}, latest"
           echo "🔗 Docker Hub: https://hub.docker.com/r/saviobatista/sbs-logger"
 
+      - name: Notify on skipped publish
+        if: needs.validate-release.outputs.should_publish == 'false'
+        run: |
+          echo "⏭️  Skipped Docker Hub publishing"
+          echo "Reason: No valid version detected or invalid release format"
+          echo "Release tag: ${{ github.event.release.tag_name }}"
+
       - name: Notify on failure
-        if: needs.dockerhub-publish.result == 'failure'
+        if: needs.validate-release.outputs.should_publish == 'true' && needs.dockerhub-publish.result == 'failure'
         run: |
           echo "❌ Failed to publish images to Docker Hub"
           exit 1 
