@@ -585,7 +585,7 @@ func TestJSONMarshaling_InvalidData(t *testing.T) {
 func TestStructFieldAccess(t *testing.T) {
 	// Test that all struct fields can be accessed and modified
 	state := AircraftState{}
-	
+
 	// Test field assignment
 	state.HexIdent = "TEST123"
 	state.Callsign = "FLIGHT123"

@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,9 +18,13 @@ type mockNATSClient struct {
 	publishedMessages []*types.SBSMessage
 	publishError      error
 	closed            bool
+	mu                sync.RWMutex
 }
 
 func (m *mockNATSClient) PublishSBSMessage(msg *types.SBSMessage) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.publishError != nil {
 		return m.publishError
 	}
@@ -28,11 +33,38 @@ func (m *mockNATSClient) PublishSBSMessage(msg *types.SBSMessage) error {
 }
 
 func (m *mockNATSClient) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.closed = true
 }
 
 func (m *mockNATSClient) SubscribeSBSRaw(handler func(*types.SBSMessage)) error {
 	return nil // Not used in ingestor
+}
+
+// GetPublishedMessagesCount returns the number of published messages
+func (m *mockNATSClient) GetPublishedMessagesCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.publishedMessages)
+}
+
+// GetPublishedMessages returns a copy of the published messages
+func (m *mockNATSClient) GetPublishedMessages() []*types.SBSMessage {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	// Return a copy to avoid race conditions
+	messages := make([]*types.SBSMessage, len(m.publishedMessages))
+	copy(messages, m.publishedMessages)
+	return messages
+}
+
+// IsClosed returns whether the client is closed
+func (m *mockNATSClient) IsClosed() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closed
 }
 
 // TestEnvironmentVariables tests environment variable handling
@@ -194,13 +226,14 @@ func TestIngestSource(t *testing.T) {
 			<-ctx.Done()
 
 			// Verify results
-			if len(mockClient.publishedMessages) != tt.expectMessages {
-				t.Errorf("Expected %d published messages, got %d", tt.expectMessages, len(mockClient.publishedMessages))
+			if mockClient.GetPublishedMessagesCount() != tt.expectMessages {
+				t.Errorf("Expected %d published messages, got %d", tt.expectMessages, mockClient.GetPublishedMessagesCount())
 			}
 
 			// Verify message content if any were published
-			if len(mockClient.publishedMessages) > 0 {
-				msg := mockClient.publishedMessages[0]
+			publishedMessages := mockClient.GetPublishedMessages()
+			if len(publishedMessages) > 0 {
+				msg := publishedMessages[0]
 				if msg.Source != actualSource {
 					t.Errorf("Expected source %q, got %q", actualSource, msg.Source)
 				}
@@ -363,8 +396,8 @@ func TestConnectAndIngest(t *testing.T) {
 				}
 			}
 
-			if len(mockClient.publishedMessages) != tt.expectMessages {
-				t.Errorf("Expected %d messages, got %d", tt.expectMessages, len(mockClient.publishedMessages))
+			if mockClient.GetPublishedMessagesCount() != tt.expectMessages {
+				t.Errorf("Expected %d messages, got %d", tt.expectMessages, mockClient.GetPublishedMessagesCount())
 			}
 		})
 	}
@@ -451,7 +484,10 @@ func TestNATSClientInterface(t *testing.T) {
 
 	client.Close()
 
-	if !mock.closed {
+	// Add a small delay to ensure the Close() method has completed
+	time.Sleep(10 * time.Millisecond)
+	
+	if !mock.IsClosed() {
 		t.Error("Expected mock to be marked as closed")
 	}
 }
