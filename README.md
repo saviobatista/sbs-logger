@@ -38,8 +38,6 @@ This project maintains high code quality and security standards through automate
 - **📋 Go Report Card**: Code quality analysis and grading
 - **🔄 CI/CD**: Automated testing, building, and deployment pipeline
 
-For detailed information about badge setup and maintenance, see [Badges Setup Guide](docs/badges-setup.md).
-
 ## 🏗️ Architecture
 
 The system consists of several microservices that communicate via NATS:
