@@ -18,17 +18,39 @@ import (
 	"github.com/savio/sbs-logger/internal/types"
 )
 
+// DBClient interface for testability
+type DBClient interface {
+	GetActiveFlights() ([]*types.Flight, error)
+	CreateFlight(flight *types.Flight) error
+	UpdateFlight(flight *types.Flight) error
+	StoreAircraftState(state *types.AircraftState) error
+	Close() error
+}
+
+// RedisClient interface for testability
+type RedisClient interface {
+	StoreFlight(ctx context.Context, flight *types.Flight) error
+	GetFlight(ctx context.Context, hexIdent string) (*types.Flight, error)
+	DeleteFlight(ctx context.Context, hexIdent string) error
+	StoreAircraftState(ctx context.Context, state *types.AircraftState) error
+	GetAircraftState(ctx context.Context, hexIdent string) (*types.AircraftState, error)
+	DeleteAircraftState(ctx context.Context, hexIdent string) error
+	SetFlightValidation(ctx context.Context, hexIdent string, valid bool) error
+	GetFlightValidation(ctx context.Context, hexIdent string) (bool, error)
+	Close() error
+}
+
 // StateTracker tracks aircraft states and flight sessions
 type StateTracker struct {
-	db            *db.Client
-	redis         *redis.Client
+	db            DBClient
+	redis         RedisClient
 	activeFlights map[string]*types.Flight
 	states        map[string]*types.AircraftState // Cache of latest states
 	stats         *stats.Stats
 }
 
 // NewStateTracker creates a new state tracker
-func NewStateTracker(db *db.Client, redis *redis.Client) *StateTracker {
+func NewStateTracker(db DBClient, redis RedisClient) *StateTracker {
 	return &StateTracker{
 		db:            db,
 		redis:         redis,
@@ -54,8 +76,10 @@ func (t *StateTracker) Start(ctx context.Context) error {
 		}
 	}
 
-	// Set database client for statistics
-	t.stats.SetDB(t.db)
+	// Set database client for statistics (only if it's the concrete type)
+	if dbClient, ok := t.db.(*db.Client); ok {
+		t.stats.SetDB(dbClient)
+	}
 
 	// Start statistics logging and persistence
 	go t.logStats(ctx)
