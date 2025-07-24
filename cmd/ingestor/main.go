@@ -15,6 +15,12 @@ import (
 	"github.com/savio/sbs-logger/internal/types"
 )
 
+// NATSClient interface for testability
+type NATSClient interface {
+	PublishSBSMessage(msg *types.SBSMessage) error
+	Close()
+}
+
 func main() {
 	// Load configuration
 	sources := os.Getenv("SOURCES")
@@ -56,7 +62,7 @@ func main() {
 	time.Sleep(time.Second) // Give time for goroutines to clean up
 }
 
-func ingestSource(ctx context.Context, source string, client *nats.Client) {
+func ingestSource(ctx context.Context, source string, client NATSClient) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -70,7 +76,7 @@ func ingestSource(ctx context.Context, source string, client *nats.Client) {
 	}
 }
 
-func connectAndIngest(ctx context.Context, source string, client *nats.Client) error {
+func connectAndIngest(ctx context.Context, source string, client NATSClient) error {
 	// Create TCP connection
 	conn, err := connectWithRetry(source)
 	if err != nil {

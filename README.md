@@ -1,13 +1,13 @@
 # SBS Logger
 
-[![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.24.5+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/saviobatista/sbs-logger)](https://goreportcard.com/report/github.com/saviobatista/sbs-logger)
 [![Code Coverage](https://codecov.io/gh/saviobatista/sbs-logger/branch/main/graph/badge.svg)](https://codecov.io/gh/saviobatista/sbs-logger)
 [![Security Scan](https://github.com/saviobatista/sbs-logger/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/saviobatista/sbs-logger/actions/workflows/ci.yml)
 [![Docker Build](https://img.shields.io/badge/Docker-Build%20Passing-brightgreen.svg)](https://github.com/saviobatista/sbs-logger/actions/workflows/ci.yml)
 [![Trivy Security](https://img.shields.io/badge/Trivy-Security%20Scan-brightgreen.svg)](https://github.com/saviobatista/sbs-logger/actions/workflows/ci.yml)
-[![Go Modules](https://img.shields.io/badge/Go%20Modules-Go%201.23+-blue.svg)](go.mod)
+[![Go Modules](https://img.shields.io/badge/Go%20Modules-Go%201.24.5+-blue.svg)](go.mod)
 [![Dependabot](https://img.shields.io/badge/Dependabot-Enabled-brightgreen.svg)](https://github.com/saviobatista/sbs-logger/security/dependabot)
 [![GitHub Issues](https://img.shields.io/github/issues/saviobatista/sbs-logger)](https://github.com/saviobatista/sbs-logger/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/saviobatista/sbs-logger)](https://github.com/saviobatista/sbs-logger/pulls)
@@ -75,7 +75,7 @@ The system consists of several microservices that communicate via NATS:
 
 ## 📋 Prerequisites
 
-- Go 1.23.0 or later
+- Go 1.24.5 or later
 - Docker and Docker Compose
 - PostgreSQL/TimescaleDB
 - Redis

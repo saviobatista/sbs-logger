@@ -11,27 +11,40 @@ import (
 	"github.com/savio/sbs-logger/internal/db/migrations"
 )
 
-func main() {
-	// Parse command line flags
+// parseFlags extracts flag parsing logic for testability
+func parseFlags() (string, bool) {
 	dbURL := flag.String("db", "postgres://sbs:sbs_password@timescaledb:5432/sbs_data?sslmode=disable", "Database connection string")
 	rollback := flag.Bool("rollback", false, "Rollback the last migration")
 	flag.Parse()
+	return *dbURL, *rollback
+}
 
-	// Connect to database
-	db, err := sql.Open("postgres", *dbURL)
-	if err != nil {
-		log.Printf("Failed to connect to database: %v", err)
+func main() {
+	// Parse command line flags
+	dbURL, rollback := parseFlags()
+
+	if err := run(dbURL, rollback); err != nil {
+		log.Printf("Migration failed: %v", err)
 		os.Exit(1)
 	}
-	// Note: db.Close() will be called at the end of the function
+}
 
-	// Test connection
-	if err := db.Ping(); err != nil {
-		log.Printf("Failed to ping database: %v", err)
+// run contains the main migration logic, extracted for testability
+func run(dbURL string, rollback bool) error {
+	// Connect to database
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer func() {
 		if err := db.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "error closing db: %v\n", err)
 		}
-		os.Exit(1)
+	}()
+
+	// Test connection
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	// Create migrator
@@ -44,25 +57,15 @@ func main() {
 	}
 
 	// Execute migration or rollback
-	if *rollback {
+	if rollback {
 		if err := migrator.Rollback(migrationList); err != nil {
-			log.Printf("Failed to rollback migration: %v", err)
-			if err := db.Close(); err != nil {
-				fmt.Fprintf(os.Stderr, "error closing db: %v\n", err)
-			}
-			os.Exit(1)
+			return fmt.Errorf("failed to rollback migration: %w", err)
 		}
 	} else {
 		if err := migrator.Migrate(migrationList); err != nil {
-			log.Printf("Failed to apply migrations: %v", err)
-			if err := db.Close(); err != nil {
-				fmt.Fprintf(os.Stderr, "error closing db: %v\n", err)
-			}
-			os.Exit(1)
+			return fmt.Errorf("failed to apply migrations: %w", err)
 		}
 	}
 
-	if err := db.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "error closing db: %v\n", err)
-	}
+	return nil
 }

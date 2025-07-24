@@ -10,9 +10,18 @@ import (
 	"github.com/savio/sbs-logger/internal/types"
 )
 
+// RedisClientInterface defines the Redis operations used by our client
+type RedisClientInterface interface {
+	Ping(ctx context.Context) *redis.StatusCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+	Get(ctx context.Context, key string) *redis.StringCmd
+	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	Close() error
+}
+
 // Client manages Redis connections and operations
 type Client struct {
-	client *redis.Client
+	client RedisClientInterface
 }
 
 // New creates a new Redis client
@@ -32,6 +41,11 @@ func New(addr string) (*Client, error) {
 	}
 
 	return &Client{client: client}, nil
+}
+
+// NewWithClient creates a new Redis client with a custom RedisClientInterface (useful for testing)
+func NewWithClient(client RedisClientInterface) *Client {
+	return &Client{client: client}
 }
 
 // Close closes the Redis connection

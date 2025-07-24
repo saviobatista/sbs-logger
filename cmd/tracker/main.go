@@ -18,17 +18,39 @@ import (
 	"github.com/savio/sbs-logger/internal/types"
 )
 
+// DBClient interface for testability
+type DBClient interface {
+	GetActiveFlights() ([]*types.Flight, error)
+	CreateFlight(flight *types.Flight) error
+	UpdateFlight(flight *types.Flight) error
+	StoreAircraftState(state *types.AircraftState) error
+	Close() error
+}
+
+// RedisClient interface for testability
+type RedisClient interface {
+	StoreFlight(ctx context.Context, flight *types.Flight) error
+	GetFlight(ctx context.Context, hexIdent string) (*types.Flight, error)
+	DeleteFlight(ctx context.Context, hexIdent string) error
+	StoreAircraftState(ctx context.Context, state *types.AircraftState) error
+	GetAircraftState(ctx context.Context, hexIdent string) (*types.AircraftState, error)
+	DeleteAircraftState(ctx context.Context, hexIdent string) error
+	SetFlightValidation(ctx context.Context, hexIdent string, valid bool) error
+	GetFlightValidation(ctx context.Context, hexIdent string) (bool, error)
+	Close() error
+}
+
 // StateTracker tracks aircraft states and flight sessions
 type StateTracker struct {
-	db            *db.Client
-	redis         *redis.Client
+	db            DBClient
+	redis         RedisClient
 	activeFlights map[string]*types.Flight
 	states        map[string]*types.AircraftState // Cache of latest states
 	stats         *stats.Stats
 }
 
 // NewStateTracker creates a new state tracker
-func NewStateTracker(db *db.Client, redis *redis.Client) *StateTracker {
+func NewStateTracker(db DBClient, redis RedisClient) *StateTracker {
 	return &StateTracker{
 		db:            db,
 		redis:         redis,
@@ -54,8 +76,10 @@ func (t *StateTracker) Start(ctx context.Context) error {
 		}
 	}
 
-	// Set database client for statistics
-	t.stats.SetDB(t.db)
+	// Set database client for statistics (only if it's the concrete type)
+	if dbClient, ok := t.db.(*db.Client); ok {
+		t.stats.SetDB(dbClient)
+	}
 
 	// Start statistics logging and persistence
 	go t.logStats(ctx)
@@ -248,8 +272,8 @@ func (t *StateTracker) logStats(ctx context.Context) {
 	}
 }
 
-func main() {
-	// Load configuration
+// parseEnvironment extracts environment variable parsing logic for testability
+func parseEnvironment() (string, string, string) {
 	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" {
 		natsURL = "nats://nats:4222" // Default to Docker service name
@@ -265,66 +289,61 @@ func main() {
 		redisAddr = "redis:6379" // Default to Docker service name
 	}
 
+	return natsURL, dbConnStr, redisAddr
+}
+
+// createClients creates all the required clients for the application
+func createClients(natsURL, dbConnStr, redisAddr string) (*nats.Client, *db.Client, *redis.Client, error) {
 	// Create NATS client
 	natsClient, err := nats.New(natsURL)
 	if err != nil {
-		log.Printf("Failed to create NATS client: %v", err)
-		os.Exit(1)
+		return nil, nil, nil, fmt.Errorf("failed to create NATS client: %w", err)
 	}
-	// Note: natsClient.Close() will be called in the shutdown handler
 
 	// Create database client
 	dbClient, err := db.New(dbConnStr)
 	if err != nil {
-		log.Printf("Failed to create database client: %v", err)
 		natsClient.Close()
-		os.Exit(1)
+		return nil, nil, nil, fmt.Errorf("failed to create database client: %w", err)
 	}
-	// Note: dbClient.Close() will be called in the shutdown handler
 
 	// Create Redis client
 	redisClient, err := redis.New(redisAddr)
 	if err != nil {
-		log.Printf("Failed to create Redis client: %v", err)
 		natsClient.Close()
-		if err := dbClient.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
+		if closeErr := dbClient.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", closeErr)
 		}
-		os.Exit(1)
+		return nil, nil, nil, fmt.Errorf("failed to create Redis client: %w", err)
 	}
-	// Note: redisClient.Close() will be called in the shutdown handler
 
+	return natsClient, dbClient, redisClient, nil
+}
+
+// setupStateTracker creates and starts the state tracker
+func setupStateTracker(dbClient *db.Client, redisClient *redis.Client) (*StateTracker, error) {
 	// Create state tracker
 	tracker := NewStateTracker(dbClient, redisClient)
 	if err := tracker.Start(context.Background()); err != nil {
-		log.Printf("Failed to start state tracker: %v", err)
-		natsClient.Close()
-		if err := dbClient.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
-		}
-		if err := redisClient.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "error closing redisClient: %v\n", err)
-		}
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to start state tracker: %w", err)
 	}
+	return tracker, nil
+}
 
-	// Subscribe to SBS messages
+// setupNATSSubscription sets up the NATS subscription for SBS messages
+func setupNATSSubscription(natsClient *nats.Client, tracker *StateTracker) error {
 	if err := natsClient.SubscribeSBSRaw(func(msg *types.SBSMessage) {
 		if err := tracker.ProcessMessage(msg); err != nil {
 			log.Printf("Failed to process message: %v", err)
 		}
 	}); err != nil {
-		log.Printf("Failed to subscribe to SBS messages: %v", err)
-		natsClient.Close()
-		if err := dbClient.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
-		}
-		if err := redisClient.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "error closing redisClient: %v\n", err)
-		}
-		os.Exit(1)
+		return fmt.Errorf("failed to subscribe to SBS messages: %w", err)
 	}
+	return nil
+}
 
+// waitForShutdown waits for shutdown signals and handles cleanup
+func waitForShutdown(natsClient *nats.Client, dbClient *db.Client, redisClient *redis.Client) {
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -339,4 +358,46 @@ func main() {
 	if err := redisClient.Close(); err != nil {
 		fmt.Fprintf(os.Stderr, "error closing redisClient: %v\n", err)
 	}
+}
+
+func main() {
+	// Load configuration
+	natsURL, dbConnStr, redisAddr := parseEnvironment()
+
+	// Create clients
+	natsClient, dbClient, redisClient, err := createClients(natsURL, dbConnStr, redisAddr)
+	if err != nil {
+		log.Printf("Failed to create clients: %v", err)
+		os.Exit(1)
+	}
+
+	// Setup state tracker
+	tracker, err := setupStateTracker(dbClient, redisClient)
+	if err != nil {
+		log.Printf("Failed to setup state tracker: %v", err)
+		natsClient.Close()
+		if err := dbClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
+		}
+		if err := redisClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing redisClient: %v\n", err)
+		}
+		os.Exit(1)
+	}
+
+	// Subscribe to SBS messages
+	if err := setupNATSSubscription(natsClient, tracker); err != nil {
+		log.Printf("Failed to setup NATS subscription: %v", err)
+		natsClient.Close()
+		if err := dbClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", err)
+		}
+		if err := redisClient.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing redisClient: %v\n", err)
+		}
+		os.Exit(1)
+	}
+
+	// Wait for shutdown
+	waitForShutdown(natsClient, dbClient, redisClient)
 }
