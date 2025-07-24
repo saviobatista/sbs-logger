@@ -1,0 +1,31 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+        # Don't fail if overall coverage drops slightly
+        if_no_uploads: error
+        if_not_found: success
+        if_ci_failed: error
+    
+    patch:
+      default:
+        target: 90%
+        threshold: 0%
+        base: auto
+        # Enforce 90% coverage on new code
+        if_no_uploads: error
+        if_not_found: success
+        if_ci_failed: error
+
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+
+github_checks:
+  annotations: true 
