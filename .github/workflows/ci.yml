@@ -46,10 +46,11 @@ jobs:
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out ./...
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
         with:
-          file: ./coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out
           flags: unittests
           name: codecov-umbrella
 
@@ -359,7 +360,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
 
-      - name: Create release assets
+      - name: Create release and upload assets
         run: |
           VERSION="${{ needs.bump_tag_version.outputs.APP_VERSION }}"
           TAG="v$VERSION"
@@ -373,14 +374,6 @@ jobs:
               tar -czf "release-assets/${binary}-${VERSION}-binaries.tar.gz" -C "${binary}-binaries" .
             fi
           done
-          
-          # Upload assets to the release
-          gh release upload $TAG release-assets/*.tar.gz --clobber
-
-      - name: Update release description
-        run: |
-          VERSION="${{ needs.bump_tag_version.outputs.APP_VERSION }}"
-          TAG="v$VERSION"
           
           # Create enhanced release notes
           cat > release_notes.md << EOF
@@ -408,5 +401,14 @@ jobs:
           - sbs-migrate:$TAG
           EOF
           
-          # Update the release description
-          gh release edit $TAG --notes-file release_notes.md 
+          # Create the release with proper notes (if it doesn't exist)
+          if ! gh release view $TAG >/dev/null 2>&1; then
+            echo "Creating release $TAG..."
+            gh release create $TAG --title "Release $TAG" --notes-file release_notes.md
+          else
+            echo "Release $TAG already exists, updating description..."
+            gh release edit $TAG --notes-file release_notes.md
+          fi
+          
+          # Upload assets to the release
+          gh release upload $TAG release-assets/*.tar.gz --clobber 
