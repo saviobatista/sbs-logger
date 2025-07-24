@@ -294,7 +294,7 @@ func TestStateTracker_ProcessMessage(t *testing.T) {
 			setupMocks: func() (*mockDBClient, *mockRedisClient) {
 				mockDB := &mockDBClient{}
 				mockRedis := newMockRedisClient()
-				mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
+				_ = mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
 				return mockDB, mockRedis
 			},
 			setupTracker:      func(t *StateTracker) {},
@@ -311,7 +311,7 @@ func TestStateTracker_ProcessMessage(t *testing.T) {
 			setupMocks: func() (*mockDBClient, *mockRedisClient) {
 				mockDB := &mockDBClient{}
 				mockRedis := newMockRedisClient()
-				mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
+				_ = mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
 				return mockDB, mockRedis
 			},
 			setupTracker: func(t *StateTracker) {
@@ -353,7 +353,7 @@ func TestStateTracker_ProcessMessage(t *testing.T) {
 			setupMocks: func() (*mockDBClient, *mockRedisClient) {
 				mockDB := &mockDBClient{storeError: fmt.Errorf("database error")}
 				mockRedis := newMockRedisClient()
-				mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
+				_ = mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
 				return mockDB, mockRedis
 			},
 			setupTracker:      func(t *StateTracker) {},
@@ -370,7 +370,7 @@ func TestStateTracker_ProcessMessage(t *testing.T) {
 			setupMocks: func() (*mockDBClient, *mockRedisClient) {
 				mockDB := &mockDBClient{}
 				mockRedis := newMockRedisClient()
-				mockRedis.SetFlightValidation(context.Background(), "ABC123", false)
+				_ = mockRedis.SetFlightValidation(context.Background(), "ABC123", false)
 				return mockDB, mockRedis
 			},
 			setupTracker:      func(t *StateTracker) {},
@@ -404,7 +404,7 @@ func TestStateTracker_ProcessMessage(t *testing.T) {
 			setupMocks: func() (*mockDBClient, *mockRedisClient) {
 				mockDB := &mockDBClient{}
 				mockRedis := newMockRedisClient()
-				mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
+				_ = mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
 				// Set different error for aircraft state storage
 				return mockDB, mockRedis
 			},

@@ -59,7 +59,11 @@ func TestStorage_WriteMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer storage.Stop()
+	defer func() {
+		if err := storage.Stop(); err != nil {
+			t.Errorf("Stop() failed: %v", err)
+		}
+	}()
 
 	// Test writing a message
 	message := []byte("test message")
@@ -111,7 +115,11 @@ func TestStorage_WriteMessageWithNewline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer storage.Stop()
+	defer func() {
+		if err := storage.Stop(); err != nil {
+			t.Errorf("Stop() failed: %v", err)
+		}
+	}()
 
 	// Test writing a message that already ends with newline
 	message := []byte("test message\n")
@@ -153,7 +161,11 @@ func TestStorage_WriteEmptyMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer storage.Stop()
+	defer func() {
+		if err := storage.Stop(); err != nil {
+			t.Errorf("Stop() failed: %v", err)
+		}
+	}()
 
 	// Test writing an empty message
 	message := []byte{}
@@ -326,7 +338,11 @@ func TestStorage_ConcurrentWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer storage.Stop()
+	defer func() {
+		if err := storage.Stop(); err != nil {
+			t.Errorf("Stop() failed: %v", err)
+		}
+	}()
 
 	// Test concurrent writes
 	const numGoroutines = 10
@@ -397,7 +413,11 @@ func TestStorage_RotateAndCompress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
-	defer storage.Stop()
+	defer func() {
+		if err := storage.Stop(); err != nil {
+			t.Errorf("Stop() failed: %v", err)
+		}
+	}()
 
 	// Write some content to create a file
 	err = storage.WriteMessage([]byte("test message"))

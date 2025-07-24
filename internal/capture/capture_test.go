@@ -294,7 +294,9 @@ func TestCapture_ConcurrentAccess(t *testing.T) {
 	done := make(chan bool, 2)
 
 	go func() {
-		capture.Start()
+		if err := capture.Start(); err != nil {
+			t.Errorf("Start() failed: %v", err)
+		}
 		done <- true
 	}()
 

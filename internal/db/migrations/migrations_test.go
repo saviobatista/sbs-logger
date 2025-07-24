@@ -18,6 +18,7 @@ func TestNew(t *testing.T) {
 	migrator := New(db)
 	if migrator == nil {
 		t.Error("Expected migrator to be created, got nil")
+		return
 	}
 	if migrator.db != db {
 		t.Error("Expected migrator to have the provided DB connection")

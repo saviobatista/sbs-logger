@@ -40,6 +40,7 @@ func TestMain_Integration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Run the main function in a subprocess
+			// #nosec G204 - args are controlled test inputs, not user input
 			cmd := exec.Command(os.Args[0], tt.args...)
 			cmd.Env = append(os.Environ(), "TEST_MAIN=1")
 			err := cmd.Run()
@@ -561,6 +562,7 @@ func TestEdgeCases(t *testing.T) {
 		for i, migration := range migrationList {
 			if migration == nil {
 				t.Errorf("Migration at index %d is nil", i)
+				continue
 			}
 			if migration.Name == "" {
 				t.Errorf("Migration at index %d has empty name", i)
@@ -771,6 +773,7 @@ func TestMigrationListValidation(t *testing.T) {
 		for i, migration := range migrationList {
 			if migration == nil {
 				t.Errorf("Migration at index %d is nil", i)
+				continue
 			}
 			if migration.Name == "" {
 				t.Errorf("Migration at index %d has empty name", i)
@@ -855,7 +858,7 @@ func TestRunWithWorkingConnection(t *testing.T) {
 func TestRunInternalLogic(t *testing.T) {
 	// Test the logic that would be executed if we had a working database connection
 	// This tests the lines that are currently not covered
-	
+
 	t.Run("migration creation logic", func(t *testing.T) {
 		// Test that we can create a migrator (this tests the migrator creation line)
 		db, mock, err := sqlmock.New()

@@ -13,13 +13,12 @@ import (
 
 // Mock Redis client that implements RedisClientInterface
 type mockRedisClient struct {
-	data           map[string]string
-	pingError      error
-	getError       error
-	setError       error
-	delError       error
-	closeError     error
-	timeoutEnabled bool
+	data       map[string]string
+	pingError  error
+	getError   error
+	setError   error
+	delError   error
+	closeError error
 }
 
 func (m *mockRedisClient) Ping(ctx context.Context) *redis.StatusCmd {
@@ -942,8 +941,8 @@ func TestClient_FullIntegration(t *testing.T) {
 	hexIdent := "FULLTEST123"
 
 	// Clean up any existing data
-	client.DeleteFlight(ctx, hexIdent)
-	client.DeleteAircraftState(ctx, hexIdent)
+	_ = client.DeleteFlight(ctx, hexIdent)
+	_ = client.DeleteAircraftState(ctx, hexIdent)
 
 	// Test complete workflow
 	flight := &types.Flight{
@@ -1019,6 +1018,6 @@ func TestClient_FullIntegration(t *testing.T) {
 	}
 
 	// Clean up
-	client.DeleteFlight(ctx, hexIdent)
-	client.DeleteAircraftState(ctx, hexIdent)
+	_ = client.DeleteFlight(ctx, hexIdent)
+	_ = client.DeleteAircraftState(ctx, hexIdent)
 }

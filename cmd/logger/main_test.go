@@ -12,36 +12,6 @@ import (
 	"github.com/savio/sbs-logger/internal/types"
 )
 
-// Mock NATS client for testing
-type mockNATSClient struct {
-	subscribeHandler func(*types.SBSMessage)
-	closed           bool
-	subscribeError   error
-}
-
-func (m *mockNATSClient) PublishSBSMessage(msg *types.SBSMessage) error {
-	return nil // Not used in logger
-}
-
-func (m *mockNATSClient) Close() {
-	m.closed = true
-}
-
-func (m *mockNATSClient) SubscribeSBSRaw(handler func(*types.SBSMessage)) error {
-	if m.subscribeError != nil {
-		return m.subscribeError
-	}
-	m.subscribeHandler = handler
-	return nil
-}
-
-// triggerHandler simulates receiving a message from NATS
-func (m *mockNATSClient) triggerHandler(msg *types.SBSMessage) {
-	if m.subscribeHandler != nil {
-		m.subscribeHandler(msg)
-	}
-}
-
 // TestEnvironmentVariables tests environment variable handling
 func TestEnvironmentVariables(t *testing.T) {
 	// Save original environment
@@ -144,7 +114,7 @@ func TestLogger_Start(t *testing.T) {
 				}
 				// Create a file with the same name as the directory we'll try to create
 				invalidDir := filepath.Join(tempDir, "blocked")
-				os.WriteFile(invalidDir, []byte("blocking file"), 0644)
+				_ = os.WriteFile(invalidDir, []byte("blocking file"), 0600)
 				// Return the blocked path as the output directory
 				return invalidDir, func() { os.RemoveAll(tempDir) }
 			},
@@ -453,7 +423,7 @@ func TestLogger_RotateAndCompress(t *testing.T) {
 				}
 
 				// Write some content
-				logger.currentFile.WriteString("test content\n")
+				_, _ = logger.currentFile.WriteString("test content\n")
 
 				return logger, func() { os.RemoveAll(tempDir) }
 			},
@@ -571,9 +541,9 @@ func TestCompressFile(t *testing.T) {
 					panic(err)
 				}
 				// Make directory read-only to prevent reading the file
-				os.Chmod(tempDir, 0400)
+				_ = os.Chmod(tempDir, 0400)
 				return testFile, func() {
-					os.Chmod(tempDir, 0755)
+					_ = os.Chmod(tempDir, 0755)
 					os.RemoveAll(tempDir)
 				}
 			},
