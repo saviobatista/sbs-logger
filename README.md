@@ -24,6 +24,7 @@ A high-performance, distributed Go application for capturing, processing, and st
 - **Redis Caching**: Fast access to active aircraft states and flight data
 - **Comprehensive Logging**: Daily log rotation with automatic compression
 - **Statistics & Monitoring**: Real-time system metrics and performance tracking
+- **FlightAware Integration**: Optional data sharing with FlightAware network via Beast protocol
 - **Docker Support**: Complete containerized deployment with docker-compose
 
 ## 🛡️ Quality & Security
@@ -167,6 +168,11 @@ cp .env.sample .env
 #### Migrate
 - `DB_CONN_STR`: Database connection string
 
+#### FlightAware Integration
+- `FA_FEEDER_ID`: Your FlightAware feeder ID (optional)
+- `FA_BEASTHOST`: Beast protocol host (default: `127.0.0.1`)
+- `FA_BEASTPORT`: Beast protocol port (default: `30005`)
+
 ### Environment Variables Organization
 
 The `.env.sample` file is organized into sections:
@@ -174,6 +180,7 @@ The `.env.sample` file is organized into sections:
 - **Ultrafeeder Configuration**: ADS-B receiver settings and web interface
 - **SBS Services**: Configuration for ingestor, logger, and tracker
 - **Database Configuration**: TimescaleDB connection settings
+- **FlightAware Feeder**: Optional FlightAware network integration settings
 - **Security**: Optional authentication and SSL settings
 
 ### Database Schema
@@ -200,6 +207,15 @@ jetstream {
 ```
 
 ## 📊 Data Processing
+
+### FlightAware Integration
+
+The system supports optional data sharing with the FlightAware network:
+
+- **Beast Protocol**: Uses the Beast binary protocol for efficient data transmission
+- **Configurable Endpoint**: Customizable host and port for Beast protocol connection
+- **Optional Integration**: FlightAware feeder is only enabled when `FA_FEEDER_ID` is set
+- **Data Sharing**: Contributes to the global FlightAware aircraft tracking network
 
 ### SBS Message Types
 
