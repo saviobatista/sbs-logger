@@ -7,11 +7,11 @@ import (
 
 func TestLoad_WithValidSources(t *testing.T) {
 	// Set up test environment
-	os.Setenv("SOURCES", "source1,source2,source3")
-	os.Setenv("OUTPUT_DIR", "/test/output")
+	_ = os.Setenv("SOURCES", "source1,source2,source3")
+	_ = os.Setenv("OUTPUT_DIR", "/test/output")
 	defer func() {
-		os.Unsetenv("SOURCES")
-		os.Unsetenv("OUTPUT_DIR")
+		_ = os.Unsetenv("SOURCES")
+		_ = os.Unsetenv("OUTPUT_DIR")
 	}()
 
 	config, err := Load()
@@ -41,10 +41,10 @@ func TestLoad_WithValidSources(t *testing.T) {
 
 func TestLoad_WithDefaultOutputDir(t *testing.T) {
 	// Set up test environment
-	os.Setenv("SOURCES", "source1")
-	os.Unsetenv("OUTPUT_DIR")
+	_ = os.Setenv("SOURCES", "source1")
+	_ = os.Unsetenv("OUTPUT_DIR")
 	defer func() {
-		os.Unsetenv("SOURCES")
+		_ = os.Unsetenv("SOURCES")
 	}()
 
 	config, err := Load()
@@ -157,4 +157,4 @@ func TestLoad_WithSpacesInSources(t *testing.T) {
 			t.Errorf("Expected source[%d] = '%s', got '%s'", i, source, config.Sources[i])
 		}
 	}
-} 
+}

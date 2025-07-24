@@ -100,7 +100,7 @@ func TestLogger_Start(t *testing.T) {
 				if err != nil {
 					panic(err)
 				}
-				return tempDir, func() { os.RemoveAll(tempDir) }
+				return tempDir, func() { _ = os.RemoveAll(tempDir) }
 			},
 			expectFileCreated: true,
 		},
@@ -116,7 +116,7 @@ func TestLogger_Start(t *testing.T) {
 				invalidDir := filepath.Join(tempDir, "blocked")
 				_ = os.WriteFile(invalidDir, []byte("blocking file"), 0600)
 				// Return the blocked path as the output directory
-				return invalidDir, func() { os.RemoveAll(tempDir) }
+				return invalidDir, func() { _ = os.RemoveAll(tempDir) }
 			},
 			expectFileCreated: false,
 		},
@@ -142,7 +142,7 @@ func TestLogger_Start(t *testing.T) {
 				if logger.currentFile == nil {
 					t.Error("Expected current file to be set after successful start")
 				} else {
-					logger.currentFile.Close()
+					_ = logger.currentFile.Close()
 				}
 				if logger.currentDate == "" {
 					t.Error("Expected current date to be set after successful start")
@@ -150,7 +150,7 @@ func TestLogger_Start(t *testing.T) {
 			} else {
 				if logger.currentFile != nil {
 					t.Error("Expected current file to be nil after failed start")
-					logger.currentFile.Close()
+					_ = logger.currentFile.Close()
 				}
 			}
 		})
@@ -163,7 +163,7 @@ func TestLogger_RotationTimer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logger := NewLogger(tempDir)
 
@@ -174,7 +174,7 @@ func TestLogger_RotationTimer(t *testing.T) {
 	}
 	defer func() {
 		if logger.currentFile != nil {
-			logger.currentFile.Close()
+			_ = logger.currentFile.Close()
 		}
 	}()
 
@@ -209,7 +209,7 @@ func TestLogger_RotationTimer_RotationTrigger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	logger := NewLogger(tempDir)
 
@@ -543,8 +543,8 @@ func TestCompressFile(t *testing.T) {
 				// Make directory read-only to prevent reading the file
 				_ = os.Chmod(tempDir, 0400)
 				return testFile, func() {
-					_ = os.Chmod(tempDir, 0755)
-					os.RemoveAll(tempDir)
+					_ = os.Chmod(tempDir, 0600)
+					_ = os.RemoveAll(tempDir)
 				}
 			},
 			expectError:   true,
@@ -620,7 +620,7 @@ func TestLogger_ErrorScenarios(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tempDir)
+		defer func() { _ = os.RemoveAll(tempDir) }()
 
 		logger := NewLogger(tempDir)
 		err = logger.rotateFile()
@@ -655,7 +655,7 @@ func TestLogger_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Setup logger
 	logger := NewLogger(tempDir)

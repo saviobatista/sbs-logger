@@ -51,7 +51,7 @@ func TestNew_Unit(t *testing.T) {
 				t.Error("Expected database connection to be initialized")
 			}
 			if client != nil {
-				client.Close()
+				_ = client.Close()
 			}
 		})
 	}
@@ -663,7 +663,7 @@ func TestNew_ValidConnectionString(t *testing.T) {
 	}
 
 	// Clean up
-	client.Close()
+	_ = client.Close()
 }
 
 func TestNew_InvalidConnectionString(t *testing.T) {
@@ -679,7 +679,7 @@ func TestNew_InvalidConnectionString(t *testing.T) {
 	// If we get here, the connection string was accepted
 	// This is actually valid behavior for sql.Open - it only validates the driver
 	t.Log("Connection string was accepted (this is valid behavior)")
-	client.Close()
+	_ = client.Close()
 }
 
 func TestNew_EmptyConnectionString(t *testing.T) {

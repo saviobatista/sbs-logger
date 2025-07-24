@@ -13,7 +13,7 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create mock DB: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	migrator := New(db)
 	if migrator == nil {
@@ -55,7 +55,7 @@ func TestMigratorInitialize(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create mock DB: %v", err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			tt.setupMock(mock)
 
@@ -134,7 +134,7 @@ func TestMigratorGetAppliedMigrations(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create mock DB: %v", err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			tt.setupMock(mock)
 

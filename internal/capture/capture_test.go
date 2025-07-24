@@ -219,14 +219,22 @@ func TestCapture_ConfigureTCPKeepalive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create listener: %v", err)
 	}
-	defer listener.Close()
+	defer func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("Failed to close listener: %v", err)
+		}
+	}()
 
 	// Connect to the listener
 	conn, err := net.Dial("tcp", listener.Addr().String())
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Errorf("Failed to close connection: %v", err)
+		}
+	}()
 
 	// Test configureTCPKeepalive
 	capture.configureTCPKeepalive(conn, "test-source")
@@ -248,13 +256,21 @@ func TestCapture_ConfigureTCPKeepaliveNonTCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create listener: %v", err)
 	}
-	defer listener.Close()
+	defer func() {
+		if err := listener.Close(); err != nil {
+			t.Errorf("Failed to close listener: %v", err)
+		}
+	}()
 
 	conn, err := net.Dial("tcp", listener.Addr().String())
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Errorf("Failed to close connection: %v", err)
+		}
+	}()
 
 	// Wrap the connection to make it non-TCP for testing
 	mockConnection := &mockConn{conn}

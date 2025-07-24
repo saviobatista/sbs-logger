@@ -171,7 +171,11 @@ func TestIngestSource(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create mock server: %v", err)
 			}
-			defer listener.Close()
+			defer func() {
+				if err := listener.Close(); err != nil {
+					t.Errorf("Failed to close listener: %v", err)
+				}
+			}()
 
 			// Get the actual port
 			actualSource := listener.Addr().String()
@@ -259,7 +263,7 @@ func TestConnectWithRetry(t *testing.T) {
 			go func() {
 				conn, err := connectWithRetry(actualSource)
 				if conn != nil {
-					conn.Close()
+					_ = conn.Close()
 				}
 				done <- err
 			}()

@@ -96,7 +96,7 @@ func TestStorage_WriteMessage(t *testing.T) {
 	}
 
 	// Read the file content
-	content, err := os.ReadFile(logFile)
+	content, err := os.ReadFile(logFile) // #nosec G304 - logFile is a controlled test path
 	if err != nil {
 		t.Fatalf("Failed to read log file: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestStorage_WriteMessageWithNewline(t *testing.T) {
 		}
 	}
 
-	content, err := os.ReadFile(logFile)
+	content, err := os.ReadFile(logFile) // #nosec G304 - logFile is a controlled test path
 	if err != nil {
 		t.Fatalf("Failed to read log file: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestStorage_WriteEmptyMessage(t *testing.T) {
 		}
 	}
 
-	content, err := os.ReadFile(logFile)
+	content, err := os.ReadFile(logFile) // #nosec G304 - logFile is a controlled test path
 	if err != nil {
 		t.Fatalf("Failed to read log file: %v", err)
 	}
@@ -259,13 +259,21 @@ func TestStorage_CompressFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open compressed file: %v", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Errorf("Failed to close file: %v", err)
+		}
+	}()
 
 	gzipReader, err := gzip.NewReader(file)
 	if err != nil {
 		t.Fatalf("Failed to create gzip reader: %v", err)
 	}
-	defer gzipReader.Close()
+	defer func() {
+		if err := gzipReader.Close(); err != nil {
+			t.Errorf("Failed to close gzip reader: %v", err)
+		}
+	}()
 
 	decompressedContent, err := io.ReadAll(gzipReader)
 	if err != nil {
@@ -311,7 +319,7 @@ func TestStorage_RotateFile(t *testing.T) {
 
 	// Get the actual filename from the file
 	if storage.file != nil {
-		storage.file.Close()
+		_ = storage.file.Close()
 	}
 
 	// Check if the file exists
@@ -381,7 +389,7 @@ func TestStorage_ConcurrentWrites(t *testing.T) {
 		}
 	}
 
-	content, err := os.ReadFile(logFile)
+	content, err := os.ReadFile(logFile) // #nosec G304 - logFile is a controlled test path
 	if err != nil {
 		t.Fatalf("Failed to read log file: %v", err)
 	}
@@ -427,7 +435,7 @@ func TestStorage_RotateAndCompress(t *testing.T) {
 
 	// Close the current file to simulate rotation
 	if storage.file != nil {
-		storage.file.Close()
+		_ = storage.file.Close()
 		storage.file = nil
 	}
 
