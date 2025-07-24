@@ -38,7 +38,7 @@ func (m *mockRedisClient) Get(ctx context.Context, key string) *redis.StringCmd 
 		cmd.SetErr(m.getError)
 		return cmd
 	}
-	
+
 	if value, exists := m.data[key]; exists {
 		cmd.SetVal(value)
 	} else {
@@ -53,11 +53,11 @@ func (m *mockRedisClient) Set(ctx context.Context, key string, value interface{}
 		cmd.SetErr(m.setError)
 		return cmd
 	}
-	
+
 	if m.data == nil {
 		m.data = make(map[string]string)
 	}
-	
+
 	// Convert value to string
 	var strValue string
 	switch v := value.(type) {
@@ -73,7 +73,7 @@ func (m *mockRedisClient) Set(ctx context.Context, key string, value interface{}
 			strValue = "unknown"
 		}
 	}
-	
+
 	m.data[key] = strValue
 	cmd.SetVal("OK")
 	return cmd
@@ -85,7 +85,7 @@ func (m *mockRedisClient) Del(ctx context.Context, keys ...string) *redis.IntCmd
 		cmd.SetErr(m.delError)
 		return cmd
 	}
-	
+
 	deleted := int64(0)
 	for _, key := range keys {
 		if _, exists := m.data[key]; exists {
@@ -106,7 +106,7 @@ func (m *mockRedisClient) Close() error {
 func TestNewWithClient_Unit(t *testing.T) {
 	mockClient := &mockRedisClient{}
 	client := NewWithClient(mockClient)
-	
+
 	if client == nil {
 		t.Fatal("Expected client to be created")
 	}
@@ -137,9 +137,9 @@ func TestClient_Close_Unit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockClient := &mockRedisClient{closeError: tt.closeError}
 			client := NewWithClient(mockClient)
-			
+
 			err := client.Close()
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
@@ -200,16 +200,16 @@ func TestClient_StoreFlight_Unit(t *testing.T) {
 			mockClient := &mockRedisClient{setError: tt.setError}
 			client := NewWithClient(mockClient)
 			ctx := context.Background()
-			
+
 			err := client.StoreFlight(ctx, tt.flight)
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Expected no error, got: %v", err)
 			}
-			
+
 			// Verify data was stored in mock (for successful cases)
 			if !tt.expectError && err == nil {
 				key := "flight:" + tt.flight.HexIdent
@@ -223,8 +223,8 @@ func TestClient_StoreFlight_Unit(t *testing.T) {
 
 func TestClient_GetFlight_Unit(t *testing.T) {
 	testFlight := &types.Flight{
-		HexIdent: "ABC123",
-		Callsign: "TEST123",
+		HexIdent:    "ABC123",
+		Callsign:    "TEST123",
 		MaxAltitude: 35000,
 	}
 	flightData, _ := json.Marshal(testFlight)
@@ -283,9 +283,9 @@ func TestClient_GetFlight_Unit(t *testing.T) {
 			}
 			client := NewWithClient(mockClient)
 			ctx := context.Background()
-			
+
 			flight, err := client.GetFlight(ctx, tt.hexIdent)
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
@@ -298,7 +298,7 @@ func TestClient_GetFlight_Unit(t *testing.T) {
 			if !tt.expectNil && !tt.expectError && flight == nil {
 				t.Error("Expected flight data")
 			}
-			
+
 			// Verify flight data for successful retrieval
 			if !tt.expectError && !tt.expectNil && flight != nil {
 				if tt.hexIdent == "NOTFOUND" {
@@ -355,9 +355,9 @@ func TestClient_DeleteFlight_Unit(t *testing.T) {
 			}
 			client := NewWithClient(mockClient)
 			ctx := context.Background()
-			
+
 			err := client.DeleteFlight(ctx, tt.hexIdent)
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
@@ -421,16 +421,16 @@ func TestClient_StoreAircraftState_Unit(t *testing.T) {
 			mockClient := &mockRedisClient{setError: tt.setError}
 			client := NewWithClient(mockClient)
 			ctx := context.Background()
-			
+
 			err := client.StoreAircraftState(ctx, tt.state)
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Expected no error, got: %v", err)
 			}
-			
+
 			// Verify data was stored in mock (for successful cases)
 			if !tt.expectError && err == nil {
 				key := "aircraft:" + tt.state.HexIdent
@@ -504,9 +504,9 @@ func TestClient_GetAircraftState_Unit(t *testing.T) {
 			}
 			client := NewWithClient(mockClient)
 			ctx := context.Background()
-			
+
 			state, err := client.GetAircraftState(ctx, tt.hexIdent)
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
@@ -519,7 +519,7 @@ func TestClient_GetAircraftState_Unit(t *testing.T) {
 			if !tt.expectNil && !tt.expectError && state == nil {
 				t.Error("Expected state data")
 			}
-			
+
 			// Verify state data for successful retrieval
 			if !tt.expectError && !tt.expectNil && state != nil {
 				if tt.hexIdent == "NOTFOUND" {
@@ -576,9 +576,9 @@ func TestClient_DeleteAircraftState_Unit(t *testing.T) {
 			}
 			client := NewWithClient(mockClient)
 			ctx := context.Background()
-			
+
 			err := client.DeleteAircraftState(ctx, tt.hexIdent)
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
@@ -625,16 +625,16 @@ func TestClient_SetFlightValidation_Unit(t *testing.T) {
 			mockClient := &mockRedisClient{setError: tt.setError}
 			client := NewWithClient(mockClient)
 			ctx := context.Background()
-			
+
 			err := client.SetFlightValidation(ctx, tt.hexIdent, tt.valid)
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Expected no error, got: %v", err)
 			}
-			
+
 			// Verify correct value was stored
 			if !tt.expectError && err == nil {
 				key := "validation:" + tt.hexIdent
@@ -716,9 +716,9 @@ func TestClient_GetFlightValidation_Unit(t *testing.T) {
 			}
 			client := NewWithClient(mockClient)
 			ctx := context.Background()
-			
+
 			valid, err := client.GetFlightValidation(ctx, tt.hexIdent)
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
@@ -788,10 +788,10 @@ func TestClient_GetData_Unit(t *testing.T) {
 			}
 			client := NewWithClient(mockClient)
 			ctx := context.Background()
-			
+
 			var target map[string]interface{}
 			err := client.getData(ctx, tt.key, &target, "test")
-			
+
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
@@ -900,7 +900,7 @@ func TestClient_RedisNilHandling_Unit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test the logic used in getData method
 			isRedisNil := tt.err == redis.Nil
-			
+
 			if tt.expectNil && !isRedisNil {
 				t.Error("Expected redis.Nil to be detected")
 			}
@@ -916,13 +916,13 @@ func TestClient_RedisNilHandling_Unit(t *testing.T) {
 func TestNew_Integration(t *testing.T) {
 	// This test requires Redis to be running
 	addr := "localhost:6379"
-	
+
 	client, err := New(addr)
 	if err != nil {
 		t.Skip("Redis not available, skipping integration test")
 	}
 	defer client.Close()
-	
+
 	if client == nil {
 		t.Fatal("Expected client to be created")
 	}
@@ -940,11 +940,11 @@ func TestClient_FullIntegration(t *testing.T) {
 
 	ctx := context.Background()
 	hexIdent := "FULLTEST123"
-	
+
 	// Clean up any existing data
 	client.DeleteFlight(ctx, hexIdent)
 	client.DeleteAircraftState(ctx, hexIdent)
-	
+
 	// Test complete workflow
 	flight := &types.Flight{
 		SessionID:      "integration-test",

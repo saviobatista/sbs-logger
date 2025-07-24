@@ -86,7 +86,7 @@ func TestClient_GetActiveFlights_Unit(t *testing.T) {
 		expectedCount int
 	}{
 		{
-						name: "successful retrieval with flights",
+			name: "successful retrieval with flights",
 			setupMock: func(mock sqlmock.Sqlmock) {
 				// NOTE: The query filters for "ended_at IS NULL", but still selects the ended_at column
 				// This is a bug in the actual code, but we test what it actually does
@@ -96,8 +96,8 @@ func TestClient_GetActiveFlights_Unit(t *testing.T) {
 					"first_latitude", "first_longitude", "last_latitude", "last_longitude",
 					"max_altitude", "max_ground_speed",
 				}).
-				AddRow("session1", "ABC123", "TEST123", time.Now(), endTime, 40.7128, -74.0060, 41.0000, -75.0000, 35000, 450.5).
-				AddRow("session2", "DEF456", "TEST456", time.Now(), endTime, 42.0000, -73.0000, 43.0000, -72.0000, 30000, 400.0)
+					AddRow("session1", "ABC123", "TEST123", time.Now(), endTime, 40.7128, -74.0060, 41.0000, -75.0000, 35000, 450.5).
+					AddRow("session2", "DEF456", "TEST456", time.Now(), endTime, 42.0000, -73.0000, 43.0000, -72.0000, 30000, 400.0)
 
 				mock.ExpectQuery(`SELECT session_id, hex_ident, callsign, started_at, ended_at,
 			first_latitude, first_longitude, last_latitude, last_longitude,
@@ -141,7 +141,7 @@ func TestClient_GetActiveFlights_Unit(t *testing.T) {
 			expectError: true,
 		},
 		{
-						name: "scan error",
+			name: "scan error",
 			setupMock: func(mock sqlmock.Sqlmock) {
 				endTime := time.Time{} // Use zero time for NULL ended_at
 				rows := sqlmock.NewRows([]string{
@@ -149,8 +149,8 @@ func TestClient_GetActiveFlights_Unit(t *testing.T) {
 					"first_latitude", "first_longitude", "last_latitude", "last_longitude",
 					"max_altitude", "max_ground_speed",
 				}).
-				AddRow("session1", "ABC123", "TEST123", time.Now(), endTime, 40.7128, -74.0060, 41.0000, -75.0000, 35000, 450.5).
-				RowError(0, sql.ErrNoRows)
+					AddRow("session1", "ABC123", "TEST123", time.Now(), endTime, 40.7128, -74.0060, 41.0000, -75.0000, 35000, 450.5).
+					RowError(0, sql.ErrNoRows)
 
 				mock.ExpectQuery(`SELECT session_id, hex_ident, callsign, started_at, ended_at,
 			first_latitude, first_longitude, last_latitude, last_longitude,
@@ -499,7 +499,7 @@ func TestClient_GetSystemStats_Unit(t *testing.T) {
 		expectError   bool
 		expectedCount int
 	}{
-				{
+		{
 			name: "successful system stats retrieval",
 			setupMock: func(mock sqlmock.Sqlmock) {
 				rows := sqlmock.NewRows([]string{
@@ -508,7 +508,7 @@ func TestClient_GetSystemStats_Unit(t *testing.T) {
 					"active_aircraft", "active_flights", "message_types",
 					"processing_time_ms", "uptime_seconds",
 				}).
-				AddRow(time.Now(), int64(100), int64(95), int64(5), int64(90), int64(10), int64(5), int64(3), int64(15), int64(7), "{0,5,10,15,20,25,30,35,40,45}", int64(100), int64(3600))
+					AddRow(time.Now(), int64(100), int64(95), int64(5), int64(90), int64(10), int64(5), int64(3), int64(15), int64(7), "{0,5,10,15,20,25,30,35,40,45}", int64(100), int64(3600))
 
 				mock.ExpectQuery(`SELECT 
 			time, total_messages, parsed_messages, failed_messages,
@@ -564,7 +564,7 @@ func TestClient_GetSystemStats_Unit(t *testing.T) {
 			},
 			expectError: true,
 		},
-				{
+		{
 			name: "scan error",
 			setupMock: func(mock sqlmock.Sqlmock) {
 				rows := sqlmock.NewRows([]string{
@@ -573,8 +573,8 @@ func TestClient_GetSystemStats_Unit(t *testing.T) {
 					"active_aircraft", "active_flights", "message_types",
 					"processing_time_ms", "uptime_seconds",
 				}).
-				AddRow(time.Now(), int64(100), int64(95), int64(5), int64(90), int64(10), int64(5), int64(3), int64(15), int64(7), "{0,5,10,15,20,25,30,35,40,45}", int64(100), int64(3600)).
-				RowError(0, sql.ErrNoRows)
+					AddRow(time.Now(), int64(100), int64(95), int64(5), int64(90), int64(10), int64(5), int64(3), int64(15), int64(7), "{0,5,10,15,20,25,30,35,40,45}", int64(100), int64(3600)).
+					RowError(0, sql.ErrNoRows)
 
 				mock.ExpectQuery(`SELECT 
 			time, total_messages, parsed_messages, failed_messages,

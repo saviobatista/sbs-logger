@@ -77,11 +77,11 @@ func TestMigratorInitialize(t *testing.T) {
 
 func TestMigratorGetAppliedMigrations(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupMock      func(sqlmock.Sqlmock)
-		expectError    bool
-		expectedCount  int
-		expectedNames  []string
+		name          string
+		setupMock     func(sqlmock.Sqlmock)
+		expectError   bool
+		expectedCount int
+		expectedNames []string
 	}{
 		{
 			name: "no applied migrations",
@@ -342,12 +342,12 @@ func TestMigratorMigrate(t *testing.T) {
 				// Initialize
 				mock.ExpectExec(`CREATE TABLE IF NOT EXISTS migrations`).
 					WillReturnResult(sqlmock.NewResult(1, 1))
-				
+
 				// Get applied migrations (empty)
 				rows := sqlmock.NewRows([]string{"name"})
 				mock.ExpectQuery(`SELECT name FROM migrations ORDER BY id`).
 					WillReturnRows(rows)
-				
+
 				// Apply first migration
 				mock.ExpectBegin()
 				mock.ExpectExec(`CREATE TABLE test1`).
@@ -374,12 +374,12 @@ func TestMigratorMigrate(t *testing.T) {
 				// Initialize
 				mock.ExpectExec(`CREATE TABLE IF NOT EXISTS migrations`).
 					WillReturnResult(sqlmock.NewResult(1, 1))
-				
+
 				// Get applied migrations (first one already applied)
 				rows := sqlmock.NewRows([]string{"name"}).AddRow("001_test")
 				mock.ExpectQuery(`SELECT name FROM migrations ORDER BY id`).
 					WillReturnRows(rows)
-				
+
 				// Apply only second migration
 				mock.ExpectBegin()
 				mock.ExpectExec(`CREATE TABLE test2`).
@@ -405,7 +405,7 @@ func TestMigratorMigrate(t *testing.T) {
 				// Initialize
 				mock.ExpectExec(`CREATE TABLE IF NOT EXISTS migrations`).
 					WillReturnResult(sqlmock.NewResult(1, 1))
-				
+
 				// Get applied migrations error
 				mock.ExpectQuery(`SELECT name FROM migrations ORDER BY id`).
 					WillReturnError(sql.ErrConnDone)
@@ -471,7 +471,7 @@ func TestMigratorRollback(t *testing.T) {
 					AddRow("002_test")
 				mock.ExpectQuery(`SELECT name FROM migrations ORDER BY id`).
 					WillReturnRows(rows)
-				
+
 				// Rollback last migration (002_test)
 				mock.ExpectBegin()
 				mock.ExpectExec(`DROP TABLE test2`).
@@ -555,4 +555,4 @@ func TestMigrationStruct(t *testing.T) {
 	if migration.CreatedAt.IsZero() {
 		t.Error("Expected CreatedAt to be set")
 	}
-} 
+}

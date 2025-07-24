@@ -1,0 +1,22 @@
+mode: set
+github.com/savio/sbs-logger/internal/nats/client.go:24.39,26.16 2 1
+github.com/savio/sbs-logger/internal/nats/client.go:26.16,28.3 1 1
+github.com/savio/sbs-logger/internal/nats/client.go:30.2,31.16 2 0
+github.com/savio/sbs-logger/internal/nats/client.go:31.16,34.3 2 0
+github.com/savio/sbs-logger/internal/nats/client.go:37.2,43.80 2 0
+github.com/savio/sbs-logger/internal/nats/client.go:43.80,46.3 2 0
+github.com/savio/sbs-logger/internal/nats/client.go:48.2,51.8 1 0
+github.com/savio/sbs-logger/internal/nats/client.go:55.65,57.16 2 0
+github.com/savio/sbs-logger/internal/nats/client.go:57.16,59.3 1 0
+github.com/savio/sbs-logger/internal/nats/client.go:61.2,62.16 2 0
+github.com/savio/sbs-logger/internal/nats/client.go:62.16,64.3 1 0
+github.com/savio/sbs-logger/internal/nats/client.go:66.2,66.12 1 0
+github.com/savio/sbs-logger/internal/nats/client.go:70.73,71.62 1 0
+github.com/savio/sbs-logger/internal/nats/client.go:71.62,73.59 2 0
+github.com/savio/sbs-logger/internal/nats/client.go:73.59,76.4 2 0
+github.com/savio/sbs-logger/internal/nats/client.go:77.3,77.19 1 0
+github.com/savio/sbs-logger/internal/nats/client.go:79.2,79.16 1 0
+github.com/savio/sbs-logger/internal/nats/client.go:79.16,81.3 1 0
+github.com/savio/sbs-logger/internal/nats/client.go:83.2,83.12 1 0
+github.com/savio/sbs-logger/internal/nats/client.go:87.26,88.19 1 1
+github.com/savio/sbs-logger/internal/nats/client.go:88.19,90.3 1 0

@@ -473,9 +473,9 @@ func TestStateTracker_MergeStates(t *testing.T) {
 				HexIdent:     "ABC123",
 				Callsign:     "NEW123",
 				Altitude:     11000,
-				GroundSpeed:  400, // Should keep existing
-				Track:        180, // Should keep existing
-				Latitude:     40.0, // Should keep existing (newState is 0)
+				GroundSpeed:  400,   // Should keep existing
+				Track:        180,   // Should keep existing
+				Latitude:     40.0,  // Should keep existing (newState is 0)
 				Longitude:    -74.0, // Should keep existing (newState is 0)
 				VerticalRate: 500,
 				Squawk:       "7700",
@@ -549,7 +549,7 @@ func TestStateTracker_MergeStates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Make a copy of existing state to avoid modifying the test case
 			existing := *tt.existing
-			
+
 			// Merge states
 			tracker.mergeStates(&existing, tt.newState)
 
@@ -787,7 +787,7 @@ func TestStateTracker_UpdateFlight(t *testing.T) {
 			tt.setupTracker(tracker)
 
 			initialFlightCount := len(tracker.activeFlights)
-			
+
 			err := tracker.updateFlight(tt.state)
 
 			if tt.expectError && err == nil {
@@ -849,7 +849,7 @@ func TestStateTracker_LogStats(t *testing.T) {
 
 	// Test context cancellation
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Start logStats in a goroutine
 	done := make(chan bool)
 	go func() {
