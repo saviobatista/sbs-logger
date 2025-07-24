@@ -2,15 +2,15 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.23+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/savio/sbs-logger)](https://goreportcard.com/report/github.com/savio/sbs-logger)
-[![Code Coverage](https://codecov.io/gh/savio/sbs-logger/branch/main/graph/badge.svg)](https://codecov.io/gh/savio/sbs-logger)
-[![Security Scan](https://github.com/savio/sbs-logger/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/savio/sbs-logger/actions/workflows/ci.yml)
-[![Docker Build](https://img.shields.io/badge/Docker-Build%20Passing-brightgreen.svg)](https://github.com/savio/sbs-logger/actions/workflows/ci.yml)
-[![Trivy Security](https://img.shields.io/badge/Trivy-Security%20Scan-brightgreen.svg)](https://github.com/savio/sbs-logger/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/saviobatista/sbs-logger)](https://goreportcard.com/report/github.com/saviobatista/sbs-logger)
+[![Code Coverage](https://codecov.io/gh/saviobatista/sbs-logger/branch/main/graph/badge.svg)](https://codecov.io/gh/saviobatista/sbs-logger)
+[![Security Scan](https://github.com/saviobatista/sbs-logger/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/saviobatista/sbs-logger/actions/workflows/ci.yml)
+[![Docker Build](https://img.shields.io/badge/Docker-Build%20Passing-brightgreen.svg)](https://github.com/saviobatista/sbs-logger/actions/workflows/ci.yml)
+[![Trivy Security](https://img.shields.io/badge/Trivy-Security%20Scan-brightgreen.svg)](https://github.com/saviobatista/sbs-logger/actions/workflows/ci.yml)
 [![Go Modules](https://img.shields.io/badge/Go%20Modules-Go%201.23+-blue.svg)](go.mod)
-[![Dependabot](https://img.shields.io/badge/Dependabot-Enabled-brightgreen.svg)](https://github.com/savio/sbs-logger/security/dependabot)
-[![GitHub Issues](https://img.shields.io/github/issues/savio/sbs-logger)](https://github.com/savio/sbs-logger/issues)
-[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/savio/sbs-logger)](https://github.com/savio/sbs-logger/pulls)
+[![Dependabot](https://img.shields.io/badge/Dependabot-Enabled-brightgreen.svg)](https://github.com/saviobatista/sbs-logger/security/dependabot)
+[![GitHub Issues](https://img.shields.io/github/issues/saviobatista/sbs-logger)](https://github.com/saviobatista/sbs-logger/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/saviobatista/sbs-logger)](https://github.com/saviobatista/sbs-logger/pulls)
 
 A high-performance, distributed Go application for capturing, processing, and storing SBS (BaseStation) messages from ADS-B receivers. The system provides real-time aircraft tracking, flight session management, and comprehensive data persistence with TimescaleDB.
 
@@ -37,8 +37,6 @@ This project maintains high code quality and security standards through automate
 - **🐳 Container Security**: Docker image scanning and multi-platform builds
 - **📋 Go Report Card**: Code quality analysis and grading
 - **🔄 CI/CD**: Automated testing, building, and deployment pipeline
-
-For detailed information about badge setup and maintenance, see [Badges Setup Guide](docs/badges-setup.md).
 
 ## 🏗️ Architecture
 
@@ -88,7 +86,7 @@ The system consists of several microservices that communicate via NATS:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/savio/sbs-logger.git
+git clone https://github.com/saviobatista/sbs-logger.git
 cd sbs-logger
 ```
 
@@ -324,10 +322,10 @@ The project provides pre-built Docker images on multiple registries:
 #### GitHub Container Registry (GHCR)
 ```bash
 # Pull images from GHCR
-docker pull ghcr.io/savio/sbs-logger/sbs-ingestor:latest
-docker pull ghcr.io/savio/sbs-logger/sbs-logger:latest
-docker pull ghcr.io/savio/sbs-logger/sbs-tracker:latest
-docker pull ghcr.io/savio/sbs-logger/sbs-migrate:latest
+docker pull ghcr.io/saviobatista/sbs-logger/sbs-ingestor:latest
+docker pull ghcr.io/saviobatista/sbs-logger/sbs-logger:latest
+docker pull ghcr.io/saviobatista/sbs-logger/sbs-tracker:latest
+docker pull ghcr.io/saviobatista/sbs-logger/sbs-migrate:latest
 ```
 
 #### Docker Hub
@@ -365,7 +363,7 @@ Update your `docker-compose.yml` to use pre-built images:
 services:
   ingestor:
     image: saviobatista/sbs-ingestor:latest
-    # or: image: ghcr.io/savio/sbs-logger/sbs-ingestor:latest
+    # or: image: ghcr.io/saviobatista/sbs-logger/sbs-ingestor:latest
     environment:
       - SOURCES=your-adsb-receiver:30003
       - NATS_URL=nats://nats:4222
