@@ -77,11 +77,11 @@ func TestNewLogger(t *testing.T) {
 		t.Error("Expected rotation channel to be initialized")
 	}
 
-	if logger.currentFile != nil {
+	if logger.GetCurrentFile() != nil {
 		t.Error("Expected current file to be nil initially")
 	}
 
-	if logger.currentDate != "" {
+	if logger.GetCurrentDate() != "" {
 		t.Error("Expected current date to be empty initially")
 	}
 }
@@ -139,18 +139,18 @@ func TestLogger_Start(t *testing.T) {
 
 			// Check results
 			if tt.expectFileCreated {
-				if logger.currentFile == nil {
+				if logger.GetCurrentFile() == nil {
 					t.Error("Expected current file to be set after successful start")
 				} else {
-					_ = logger.currentFile.Close()
+					_ = logger.GetCurrentFile().Close()
 				}
-				if logger.currentDate == "" {
+				if logger.GetCurrentDate() == "" {
 					t.Error("Expected current date to be set after successful start")
 				}
 			} else {
-				if logger.currentFile != nil {
+				if logger.GetCurrentFile() != nil {
 					t.Error("Expected current file to be nil after failed start")
-					_ = logger.currentFile.Close()
+					_ = logger.GetCurrentFile().Close()
 				}
 			}
 		})
@@ -173,8 +173,8 @@ func TestLogger_RotationTimer(t *testing.T) {
 		t.Fatalf("Failed to initialize logger: %v", err)
 	}
 	defer func() {
-		if logger.currentFile != nil {
-			_ = logger.currentFile.Close()
+		if logger.GetCurrentFile() != nil {
+			_ = logger.GetCurrentFile().Close()
 		}
 	}()
 
@@ -219,8 +219,8 @@ func TestLogger_RotationTimer_RotationTrigger(t *testing.T) {
 		t.Fatalf("Failed to initialize logger: %v", err)
 	}
 	defer func() {
-		if logger.currentFile != nil {
-			logger.currentFile.Close()
+		if logger.GetCurrentFile() != nil {
+			logger.GetCurrentFile().Close()
 		}
 	}()
 
@@ -286,12 +286,12 @@ func TestLogger_RotateFile(t *testing.T) {
 			}
 
 			if !tt.expectError {
-				if logger.currentFile == nil {
+				if logger.GetCurrentFile() == nil {
 					t.Error("Expected current file to be set")
 				} else {
-					logger.currentFile.Close()
+					logger.GetCurrentFile().Close()
 				}
-				if logger.currentDate == "" {
+				if logger.GetCurrentDate() == "" {
 					t.Error("Expected current date to be set")
 				}
 
@@ -327,8 +327,8 @@ func TestLogger_WriteMessage(t *testing.T) {
 					panic(err)
 				}
 				return logger, func() {
-					if logger.currentFile != nil {
-						logger.currentFile.Close()
+					if logger.GetCurrentFile() != nil {
+						logger.GetCurrentFile().Close()
 					}
 					os.RemoveAll(tempDir)
 				}
@@ -353,10 +353,10 @@ func TestLogger_WriteMessage(t *testing.T) {
 					panic(err)
 				}
 				// Set date to yesterday to trigger rotation
-				logger.currentDate = time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+				logger.SetCurrentDateForTesting(time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02"))
 				return logger, func() {
-					if logger.currentFile != nil {
-						logger.currentFile.Close()
+					if logger.GetCurrentFile() != nil {
+						logger.GetCurrentFile().Close()
 					}
 					os.RemoveAll(tempDir)
 				}
@@ -415,7 +415,7 @@ func TestLogger_RotateAndCompress(t *testing.T) {
 
 				// Set up initial state with a previous date
 				yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
-				logger.currentDate = yesterday
+				logger.SetCurrentDateForTesting(yesterday)
 
 				err = logger.rotateFile()
 				if err != nil {
@@ -423,7 +423,7 @@ func TestLogger_RotateAndCompress(t *testing.T) {
 				}
 
 				// Write some content
-				_, _ = logger.currentFile.WriteString("test content\n")
+				_, _ = logger.GetCurrentFile().WriteString("test content\n")
 
 				return logger, func() { os.RemoveAll(tempDir) }
 			},
@@ -438,7 +438,7 @@ func TestLogger_RotateAndCompress(t *testing.T) {
 				}
 				logger := NewLogger(tempDir)
 				// Don't initialize current file
-				logger.currentDate = time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+				logger.SetCurrentDateForTesting(time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02"))
 				return logger, func() { os.RemoveAll(tempDir) }
 			},
 			expectError: false,
@@ -468,8 +468,8 @@ func TestLogger_RotateAndCompress(t *testing.T) {
 			logger, cleanup := tt.setupLogger()
 			defer cleanup()
 			defer func() {
-				if logger.currentFile != nil {
-					logger.currentFile.Close()
+				if logger.GetCurrentFile() != nil {
+					logger.GetCurrentFile().Close()
 				}
 			}()
 
@@ -485,10 +485,10 @@ func TestLogger_RotateAndCompress(t *testing.T) {
 			if !tt.expectError {
 				// Verify new file was created with today's date
 				expectedDate := time.Now().UTC().Format("2006-01-02")
-				if logger.currentDate != expectedDate {
-					t.Errorf("Expected current date %s, got %s", expectedDate, logger.currentDate)
+				if logger.GetCurrentDate() != expectedDate {
+					t.Errorf("Expected current date %s, got %s", expectedDate, logger.GetCurrentDate())
 				}
-				if logger.currentFile == nil {
+				if logger.GetCurrentFile() == nil {
 					t.Error("Expected current file to be set after rotation")
 				}
 			}
@@ -629,7 +629,7 @@ func TestLogger_ErrorScenarios(t *testing.T) {
 		}
 
 		// Close the file to simulate error condition
-		logger.currentFile.Close()
+		logger.GetCurrentFile().Close()
 
 		// Try to write message (should fail)
 		testMessage := &types.SBSMessage{
@@ -707,8 +707,8 @@ func TestLogger_Integration(t *testing.T) {
 	}
 
 	// Cleanup
-	if logger.currentFile != nil {
-		logger.currentFile.Close()
+	if logger.GetCurrentFile() != nil {
+		logger.GetCurrentFile().Close()
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -75,6 +76,7 @@ type Logger struct {
 	currentFile  *os.File
 	currentDate  string
 	rotationChan chan struct{}
+	mu           sync.RWMutex
 }
 
 // NewLogger creates a new logger instance
@@ -87,6 +89,9 @@ func NewLogger(outputDir string) *Logger {
 
 // Start initializes the logger and starts the rotation timer
 func (l *Logger) Start(ctx context.Context) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	// Initialize the current file
 	if err := l.rotateFile(); err != nil {
 		log.Printf("Failed to create initial log file: %v", err)
@@ -99,13 +104,18 @@ func (l *Logger) Start(ctx context.Context) {
 
 // WriteMessage writes a message to the current log file
 func (l *Logger) WriteMessage(msg *types.SBSMessage) error {
+	l.mu.RLock()
+	currentDate := l.currentDate
+	currentFile := l.currentFile
+	l.mu.RUnlock()
+
 	// Check if we need to rotate
-	if l.currentDate != time.Now().UTC().Format("2006-01-02") {
+	if currentDate != time.Now().UTC().Format("2006-01-02") {
 		l.rotationChan <- struct{}{}
 	}
 
 	// Write message to file
-	if _, err := l.currentFile.WriteString(msg.Raw); err != nil {
+	if _, err := currentFile.WriteString(msg.Raw); err != nil {
 		return fmt.Errorf("failed to write message: %w", err)
 	}
 
@@ -129,6 +139,9 @@ func (l *Logger) rotationTimer(ctx context.Context) {
 // rotateAndCompress closes the current file, compresses the previous day's log,
 // and creates a new log file
 func (l *Logger) rotateAndCompress() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	// Close current file
 	if l.currentFile != nil {
 		if err := l.currentFile.Close(); err != nil {
@@ -151,8 +164,8 @@ func (l *Logger) rotateAndCompress() error {
 // rotateFile creates a new log file for the current day
 func (l *Logger) rotateFile() error {
 	// Get current date
-	l.currentDate = time.Now().UTC().Format("2006-01-02")
-	logPath := filepath.Join(l.outputDir, fmt.Sprintf("sbs_%s.log", l.currentDate))
+	currentDate := time.Now().UTC().Format("2006-01-02")
+	logPath := filepath.Join(l.outputDir, fmt.Sprintf("sbs_%s.log", currentDate))
 
 	// Create new file
 	//nolint:gosec // logPath is controlled by application logic
@@ -162,6 +175,7 @@ func (l *Logger) rotateFile() error {
 	}
 
 	l.currentFile = file
+	l.currentDate = currentDate
 	return nil
 }
 
@@ -198,4 +212,25 @@ func compressFile(filePath string) error {
 	}
 
 	return nil
+}
+
+// GetCurrentFile returns the current file in a thread-safe manner
+func (l *Logger) GetCurrentFile() *os.File {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.currentFile
+}
+
+// GetCurrentDate returns the current date in a thread-safe manner
+func (l *Logger) GetCurrentDate() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.currentDate
+}
+
+// SetCurrentDateForTesting sets the current date for testing purposes
+func (l *Logger) SetCurrentDateForTesting(date string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.currentDate = date
 }

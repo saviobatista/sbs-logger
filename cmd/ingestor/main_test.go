@@ -53,7 +53,7 @@ func (m *mockNATSClient) GetPublishedMessagesCount() int {
 func (m *mockNATSClient) GetPublishedMessages() []*types.SBSMessage {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	// Return a copy to avoid race conditions
 	messages := make([]*types.SBSMessage, len(m.publishedMessages))
 	copy(messages, m.publishedMessages)
@@ -486,7 +486,7 @@ func TestNATSClientInterface(t *testing.T) {
 
 	// Add a small delay to ensure the Close() method has completed
 	time.Sleep(10 * time.Millisecond)
-	
+
 	if !mock.IsClosed() {
 		t.Error("Expected mock to be marked as closed")
 	}
