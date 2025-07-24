@@ -46,10 +46,10 @@ func TestEnvironmentVariables(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name          string
-		sources       string
-		natsURL       string
-		expectError   bool
+		name            string
+		sources         string
+		natsURL         string
+		expectError     bool
 		expectedSources []string
 		expectedNATSURL string
 	}{
@@ -211,11 +211,11 @@ func TestIngestSource(t *testing.T) {
 // TestConnectWithRetry tests the connection retry logic
 func TestConnectWithRetry(t *testing.T) {
 	tests := []struct {
-		name         string
-		source       string
-		setupServer  func() (net.Listener, error)
-		expectError  bool
-		maxDuration  time.Duration
+		name        string
+		source      string
+		setupServer func() (net.Listener, error)
+		expectError bool
+		maxDuration time.Duration
 	}{
 		{
 			name:   "successful connection",
@@ -229,7 +229,7 @@ func TestConnectWithRetry(t *testing.T) {
 		{
 			name:        "connection failure",
 			source:      "localhost:99999", // Invalid port
-			setupServer: nil, // No server setup needed for failure case
+			setupServer: nil,               // No server setup needed for failure case
 			expectError: true,
 			maxDuration: 100 * time.Millisecond, // Short timeout for failure case
 		},
@@ -238,7 +238,7 @@ func TestConnectWithRetry(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var actualSource string
-			
+
 			if tt.setupServer != nil {
 				listener, err := tt.setupServer()
 				if err != nil {
@@ -285,12 +285,12 @@ func TestConnectWithRetry(t *testing.T) {
 // TestConnectAndIngest tests the connectAndIngest function
 func TestConnectAndIngest(t *testing.T) {
 	tests := []struct {
-		name          string
-		setupServer   func() (net.Listener, error)
-		setupMockNATS func() *mockNATSClient
-		expectError   bool
+		name           string
+		setupServer    func() (net.Listener, error)
+		setupMockNATS  func() *mockNATSClient
+		expectError    bool
 		expectMessages int
-		maxDuration   time.Duration
+		maxDuration    time.Duration
 	}{
 		{
 			name: "successful connect and ingest",
@@ -323,7 +323,7 @@ func TestConnectAndIngest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var actualSource string
-			
+
 			if tt.expectError {
 				actualSource = "invalid:99999"
 			} else {
@@ -390,7 +390,7 @@ func createMockTCPServer(messages []string) (net.Listener, error) {
 
 	go func() {
 		defer listener.Close()
-		
+
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -399,7 +399,7 @@ func createMockTCPServer(messages []string) (net.Listener, error) {
 
 			go func(conn net.Conn) {
 				defer conn.Close()
-				
+
 				// Send messages with small delay
 				for _, msg := range messages {
 					time.Sleep(10 * time.Millisecond)
@@ -408,7 +408,7 @@ func createMockTCPServer(messages []string) (net.Listener, error) {
 						return
 					}
 				}
-				
+
 				// Keep connection open briefly then close
 				time.Sleep(100 * time.Millisecond)
 			}(conn)
@@ -421,25 +421,25 @@ func createMockTCPServer(messages []string) (net.Listener, error) {
 // TestNATSClientInterface tests that our mock implements the expected interface
 func TestNATSClientInterface(t *testing.T) {
 	mock := &mockNATSClient{}
-	
+
 	// Test that our mock can be used as a NATSClient
 	var client NATSClient = mock
-	
+
 	// Test the interface methods
 	msg := &types.SBSMessage{
 		Raw:       "test message",
 		Timestamp: time.Now(),
 		Source:    "test",
 	}
-	
+
 	err := client.PublishSBSMessage(msg)
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
-	
+
 	client.Close()
-	
+
 	if !mock.closed {
 		t.Error("Expected mock to be marked as closed")
 	}
-} 
+}
