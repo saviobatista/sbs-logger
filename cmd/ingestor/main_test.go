@@ -251,7 +251,11 @@ func TestConnectWithRetry(t *testing.T) {
 					}
 					actualSource = tt.source
 				} else {
-					defer listener.Close()
+					defer func() {
+						if err := listener.Close(); err != nil {
+							t.Errorf("Failed to close listener: %v", err)
+						}
+					}()
 					actualSource = listener.Addr().String()
 				}
 			} else {
@@ -335,7 +339,11 @@ func TestConnectAndIngest(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Failed to create mock server: %v", err)
 				}
-				defer listener.Close()
+				defer func() {
+					if err := listener.Close(); err != nil {
+						t.Errorf("Failed to close listener: %v", err)
+					}
+				}()
 				actualSource = listener.Addr().String()
 			}
 
