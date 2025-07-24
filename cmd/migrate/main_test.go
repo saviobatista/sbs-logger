@@ -1005,7 +1005,9 @@ func TestMainFunctionLogic(t *testing.T) {
 
 			// Parse the test arguments
 			os.Args = tc.args
-			flag.CommandLine.Parse(tc.args[1:]) // Skip the command name
+			if err := flag.CommandLine.Parse(tc.args[1:]); err != nil { // Skip the command name
+				t.Fatalf("Failed to parse flags: %v", err)
+			}
 
 			if *dbURL != tc.expected {
 				t.Errorf("Expected db=%q, got %q", tc.expected, *dbURL)
@@ -1079,7 +1081,9 @@ func TestMainFunctionExitBehavior(t *testing.T) {
 		dbURL := flag.String("db", "postgres://sbs:sbs_password@timescaledb:5432/sbs_data?sslmode=disable", "Database connection string")
 		rollback := flag.Bool("rollback", false, "Rollback the last migration")
 
-		flag.CommandLine.Parse(os.Args[1:])
+		if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+			t.Fatalf("Failed to parse flags: %v", err)
+		}
 
 		// Verify parameters are parsed correctly
 		if *dbURL != "test://db" {

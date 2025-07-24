@@ -1408,9 +1408,6 @@ func TestMainFunctionShutdownBehavior(t *testing.T) {
 
 		// Test that signal channel is created correctly
 		sigChan := make(chan os.Signal, 1)
-		if sigChan == nil {
-			t.Error("Expected signal channel to be created")
-		}
 
 		// Test that we can send a signal to the channel
 		select {
@@ -1526,11 +1523,16 @@ func TestMainFunctionErrorHandlingPaths(t *testing.T) {
 		// Test that we can create a mock message handler
 		messageHandler := func(msg *types.SBSMessage) {
 			// This would be the actual message handler
+			_ = msg // Suppress unused variable warning
 		}
 
-		if messageHandler == nil {
-			t.Error("Expected message handler to be created")
+		// Test that the handler can be called (functions are never nil)
+		testMessage := &types.SBSMessage{
+			Raw:       "MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0,0,0",
+			Timestamp: time.Now(),
+			Source:    "test-source",
 		}
+		messageHandler(testMessage)
 	})
 }
 
@@ -1591,11 +1593,8 @@ func TestSetupNATSSubscription(t *testing.T) {
 		messageHandler := func(msg *types.SBSMessage) {
 			if err := tracker.ProcessMessage(msg); err != nil {
 				// This would be logged in the real function
+				_ = err // Suppress unused variable warning
 			}
-		}
-
-		if messageHandler == nil {
-			t.Error("Expected message handler to be created")
 		}
 
 		// Test that the handler can be called
@@ -1622,9 +1621,6 @@ func TestWaitForShutdown(t *testing.T) {
 
 		// Test that we can create the signal channel
 		sigChan := make(chan os.Signal, 1)
-		if sigChan == nil {
-			t.Error("Expected signal channel to be created")
-		}
 
 		// Test that we can send a signal to the channel
 		select {
