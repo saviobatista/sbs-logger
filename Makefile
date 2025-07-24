@@ -67,9 +67,13 @@ build-%: ## Build specific service (e.g., build-ingestor)
 docker-build: ## Build all Docker images
 	@for service in $(SERVICES); do \
 		echo "Building Docker image for $$service..."; \
-		docker build -f Dockerfile.$$service -t $(IMAGE_PREFIX)/sbs-$$service:$(VERSION) .; \
+		docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile.$$service -t $(IMAGE_PREFIX)/sbs-$$service:$(VERSION) .; \
 		docker tag $(IMAGE_PREFIX)/sbs-$$service:$(VERSION) $(IMAGE_PREFIX)/sbs-$$service:latest; \
 	done
+
+docker-build-test: ## Test Docker builds locally
+	@echo "Testing Docker builds..."
+	@./scripts/build-test.sh
 
 docker-build-%: ## Build specific Docker image (e.g., docker-build-ingestor)
 	@echo "Building Docker image for $*..."

@@ -1,26 +1,54 @@
-FROM golang:1.24.5-alpine AS builder
+# Build stage
+FROM --platform=$BUILDPLATFORM golang:1.24.5-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app
 
 # Copy go mod and sum files
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
+# Download dependencies with timeout
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o ingestor ./cmd/ingestor
+# Build the application with optimizations and timeout
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
 
-# Use a smaller image for the final container
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build \
+    -ldflags="-w -s" \
+    -o ingestor \
+    ./cmd/ingestor
+
+# Final stage
 FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
 # Copy the binary from builder
 COPY --from=builder /app/ingestor .
+
+# Create non-root user
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup
+
+# Change ownership of the app directory
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
 
 # Run the application
 CMD ["./ingestor"] 
