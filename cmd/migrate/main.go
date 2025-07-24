@@ -11,13 +11,19 @@ import (
 	"github.com/savio/sbs-logger/internal/db/migrations"
 )
 
-func main() {
-	// Parse command line flags
+// parseFlags extracts flag parsing logic for testability
+func parseFlags() (string, bool) {
 	dbURL := flag.String("db", "postgres://sbs:sbs_password@timescaledb:5432/sbs_data?sslmode=disable", "Database connection string")
 	rollback := flag.Bool("rollback", false, "Rollback the last migration")
 	flag.Parse()
+	return *dbURL, *rollback
+}
 
-	if err := run(*dbURL, *rollback); err != nil {
+func main() {
+	// Parse command line flags
+	dbURL, rollback := parseFlags()
+
+	if err := run(dbURL, rollback); err != nil {
 		log.Printf("Migration failed: %v", err)
 		os.Exit(1)
 	}
