@@ -207,4 +207,4 @@ func TestAircraftState_ZeroValues(t *testing.T) {
 	if state.SessionID != "" {
 		t.Errorf("Expected empty SessionID, got %v", state.SessionID)
 	}
-} 
+}
