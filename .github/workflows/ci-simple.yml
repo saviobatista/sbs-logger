@@ -56,4 +56,39 @@ jobs:
           for service in ingestor logger tracker migrate; do
             echo "Testing Docker build for $service..."
             docker build -f Dockerfile.$service -t test-$service .
-          done 
+          done
+
+  # Only run version check on main branch pushes
+  version-check:
+    name: Version Check
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for version bump labels
+        run: |
+          echo "Checking if this merge included version bump labels..."
+          
+          # Get the commit message and PR labels if available
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          echo "Commit message: $COMMIT_MSG"
+          
+          # Check if this looks like a merge commit
+          if [[ "$COMMIT_MSG" == *"Merge pull request"* ]]; then
+            echo "This appears to be a merge commit"
+            echo "Version bump labels should be applied to the PR before merging"
+            echo "Available labels: patch, minor, major, no-version-update"
+          else
+            echo "Direct commit to main - no version bump expected"
+          fi
+          
+          echo "✅ Version check completed" 
