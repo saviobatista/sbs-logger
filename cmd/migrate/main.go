@@ -8,7 +8,7 @@ import (
 	"os"
 
 	_ "github.com/lib/pq"
-	"github.com/savio/sbs-logger/internal/db/migrations"
+	"github.com/saviobatista/sbs-logger/internal/db/migrations"
 )
 
 // parseFlags extracts flag parsing logic for testability

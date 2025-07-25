@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/savio/sbs-logger/internal/db"
+	"github.com/saviobatista/sbs-logger/internal/db"
 )
 
 // Stats tracks message processing statistics

@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/savio/sbs-logger/internal/db"
-	"github.com/savio/sbs-logger/internal/nats"
-	"github.com/savio/sbs-logger/internal/parser"
-	"github.com/savio/sbs-logger/internal/redis"
-	"github.com/savio/sbs-logger/internal/stats"
-	"github.com/savio/sbs-logger/internal/types"
+	"github.com/saviobatista/sbs-logger/internal/db"
+	"github.com/saviobatista/sbs-logger/internal/nats"
+	"github.com/saviobatista/sbs-logger/internal/parser"
+	"github.com/saviobatista/sbs-logger/internal/redis"
+	"github.com/saviobatista/sbs-logger/internal/stats"
+	"github.com/saviobatista/sbs-logger/internal/types"
 )
 
 // DBClient interface for testability

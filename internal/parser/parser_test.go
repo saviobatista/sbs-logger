@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/savio/sbs-logger/internal/testutils"
-	"github.com/savio/sbs-logger/internal/types"
+	"github.com/saviobatista/sbs-logger/internal/testutils"
+	"github.com/saviobatista/sbs-logger/internal/types"
 )
 
 func TestParseMessage(t *testing.T) {

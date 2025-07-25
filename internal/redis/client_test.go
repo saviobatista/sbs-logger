@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/savio/sbs-logger/internal/types"
+	"github.com/saviobatista/sbs-logger/internal/types"
 )
 
 // Mock Redis client that implements RedisClientInterface

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/savio/sbs-logger/internal/types"
+	"github.com/saviobatista/sbs-logger/internal/types"
 )
 
 // Mock DB client for testing

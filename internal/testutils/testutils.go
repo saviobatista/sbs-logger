@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/savio/sbs-logger/internal/types"
+	"github.com/saviobatista/sbs-logger/internal/types"
 )
 
 // MockSBSMessage creates a mock SBS message for testing
