@@ -81,6 +81,9 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Create bin directory
+        run: mkdir -p bin
+
       - name: Build ${{ matrix.binary }}
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
@@ -102,11 +105,19 @@ jobs:
             -o bin/${{ matrix.binary }}-darwin-amd64 \
             ./cmd/${{ matrix.binary }}
 
+      - name: List built binaries
+        run: |
+          echo "Built binaries for ${{ matrix.binary }}:"
+          ls -la bin/${{ matrix.binary }}-*
+          echo "Binary sizes:"
+          du -h bin/${{ matrix.binary }}-*
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.binary }}-binaries
           path: bin/${{ matrix.binary }}-*
+          retention-days: 1
 
   # Quick build for PRs - only build one binary to verify compilation
   pr-build:
@@ -375,8 +386,9 @@ jobs:
   release:
     name: Create Release Assets
     runs-on: ubuntu-latest
-    needs: [bump_tag_version]
+    needs: [bump_tag_version, build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.bump_tag_version.outputs.SHOULD_RELEASE == 'true'
+    timeout-minutes: 15
     permissions:
       contents: write
       packages: write
@@ -397,8 +409,59 @@ jobs:
       - name: Authenticate with GitHub
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: Download all artifacts
+      - name: List available artifacts
+        run: |
+          echo "Available artifacts from previous jobs:"
+          gh run list --limit 5 --json artifacts,status,conclusion,headBranch,headSha
+          echo "Current run ID: ${{ github.run_id }}"
+
+      - name: Check build job status
+        run: |
+          echo "Checking if build job completed successfully..."
+          # The build job should have completed since this job depends on it
+          echo "Build job dependency satisfied"
+
+      - name: Download ingestor artifacts
         uses: actions/download-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: ingestor-binaries
+          path: ingestor-binaries
+
+      - name: Download logger artifacts
+        uses: actions/download-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: logger-binaries
+          path: logger-binaries
+
+      - name: Download tracker artifacts
+        uses: actions/download-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: tracker-binaries
+          path: tracker-binaries
+
+      - name: Download migrate artifacts
+        uses: actions/download-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: migrate-binaries
+          path: migrate-binaries
+
+      - name: Verify artifacts downloaded
+        run: |
+          echo "Verifying all artifacts were downloaded successfully..."
+          for binary in ingestor logger tracker migrate; do
+            if [ ! -d "${binary}-binaries" ]; then
+              echo "❌ Error: ${binary}-binaries directory not found"
+              exit 1
+            fi
+            echo "✅ Found ${binary}-binaries directory"
+            echo "Contents:"
+            ls -la "${binary}-binaries/"
+          done
+          echo "✅ All artifacts downloaded successfully"
 
       - name: Create release and upload assets
         run: |
@@ -414,13 +477,30 @@ jobs:
             exit 1
           fi
           
+          # Debug: List downloaded artifacts
+          echo "Checking downloaded artifacts..."
+          ls -la
+          for binary in ingestor logger tracker migrate; do
+            if [ -d "${binary}-binaries" ]; then
+              echo "Found ${binary}-binaries directory:"
+              ls -la "${binary}-binaries/"
+            else
+              echo "Warning: ${binary}-binaries directory not found"
+            fi
+          done
+          
           # Create release assets directory
           mkdir -p release-assets
           
-          # Package binaries
+          # Package binaries with validation
           for binary in ingestor logger tracker migrate; do
             if [ -d "${binary}-binaries" ]; then
+              echo "Packaging ${binary} binaries..."
               tar -czf "release-assets/${binary}-${VERSION}-binaries.tar.gz" -C "${binary}-binaries" .
+              echo "Created: release-assets/${binary}-${VERSION}-binaries.tar.gz"
+            else
+              echo "Error: ${binary}-binaries directory not found - cannot create release asset"
+              exit 1
             fi
           done
           
