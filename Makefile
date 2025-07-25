@@ -27,8 +27,14 @@ fmt: ## Format Go code
 lint: ## Run linter
 	golangci-lint run
 
-test: ## Run tests
-	go test -v -race -coverprofile=coverage.out ./...
+test: ## Run unit tests only (fast)
+	go test -v -race ./...
+
+test-integration: ## Run integration tests only (requires Docker)
+	go test -tags=integration -v ./... -run TestIntegration
+
+test-all: ## Run all tests (unit + integration) with coverage
+	go test -tags=integration -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
 test-short: ## Run tests without race detection
