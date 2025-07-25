@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/saviobatista/sbs-logger/internal/nats"
+	natsclient "github.com/saviobatista/sbs-logger/internal/nats"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -90,7 +90,7 @@ func TestIntegration_IngestorWithRealNATS(t *testing.T) {
 			defer tt.cleanupEnv()
 
 			// Test connectAndIngest function directly with real NATS
-			client, err := nats.New(tt.natsURL)
+			client, err := natsclient.New(tt.natsURL)
 			if err != nil {
 				t.Fatalf("Failed to create NATS client: %v", err)
 			}
@@ -139,7 +139,7 @@ func TestIntegration_IngestorConnectionRetry(t *testing.T) {
 	}()
 
 	// Test connection to non-existent source (should retry)
-	client, err := nats.New(natsURL)
+	client, err := natsclient.New(natsURL)
 	if err != nil {
 		t.Fatalf("Failed to create NATS client: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestIntegration_IngestorEnvironmentVariables(t *testing.T) {
 			os.Setenv("NATS_URL", tt.natsURL)
 
 			// Test NATS client creation
-			client, err := nats.New(tt.natsURL)
+			client, err := natsclient.New(tt.natsURL)
 			if tt.expectNATSClient && err != nil {
 				t.Errorf("Expected NATS client creation to succeed, got error: %v", err)
 			}
@@ -266,7 +266,7 @@ func TestIntegration_IngestorGracefulShutdown(t *testing.T) {
 	defer mockDataServer.Close()
 
 	// Create NATS client
-	client, err := nats.New(natsURL)
+	client, err := natsclient.New(natsURL)
 	if err != nil {
 		t.Fatalf("Failed to create NATS client: %v", err)
 	}

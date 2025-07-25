@@ -240,7 +240,7 @@ func TestIntegration_ParseFlagsWithRealUsage(t *testing.T) {
 // startPostgreSQLContainer starts a PostgreSQL container for testing
 func startPostgreSQLContainer(t *testing.T, ctx context.Context) (testcontainers.Container, string) {
 	postgresContainer, err := postgres.Run(ctx,
-		"postgres:14-alpine",
+		"timescale/timescaledb:latest-pg14",
 		postgres.WithDatabase("test_db"),
 		postgres.WithUsername("test_user"),
 		postgres.WithPassword("test_password"),

@@ -4,19 +4,20 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go"
+	_ "github.com/lib/pq"
 	"github.com/saviobatista/sbs-logger/internal/db"
-	"github.com/saviobatista/sbs-logger/internal/nats"
+	natsclient "github.com/saviobatista/sbs-logger/internal/nats"
 	"github.com/saviobatista/sbs-logger/internal/redis"
 	"github.com/saviobatista/sbs-logger/internal/types"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/modules/redis_test"
+	rediscontainer "github.com/testcontainers/testcontainers-go/modules/redis"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
@@ -63,15 +64,15 @@ func TestIntegration_TrackerFullStack(t *testing.T) {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	// Setup Redis
-	redisClient, err := redis.NewWithClient(redisAddr)
+	// Setup Redis - extract host:port from connection string
+	redisClient, err := redis.New(redisAddr)
 	if err != nil {
 		t.Fatalf("Failed to create Redis client: %v", err)
 	}
 	defer redisClient.Close()
 
 	// Setup NATS
-	natsClient, err := nats.New(natsURL)
+	natsClient, err := natsclient.New(natsURL)
 	if err != nil {
 		t.Fatalf("Failed to create NATS client: %v", err)
 	}
@@ -103,17 +104,17 @@ func TestIntegration_TrackerFullStack(t *testing.T) {
 	// Test scenarios
 	testMessages := []*types.SBSMessage{
 		{
-			Raw:       "MSG,3,111,11111,4CA2D6,111111,2015/02/19,18:06:07.710,2015/02/19,18:06:07.710,,33000,45.1234,-122.5678,90,180,1,0,0,0,0",
+			Raw:       "MSG,3,111,11111,4CA2D6,111111,2015/02/19,18:06:07.710,2015/02/19,18:06:07.710,,33000,450,180,45.1234,-122.5678,0,0,0,0,0,0",
 			Timestamp: time.Now().UTC(),
 			Source:    "integration-test",
 		},
 		{
-			Raw:       "MSG,1,111,11111,4CA2D6,111111,2015/02/19,18:06:08.710,2015/02/19,18:06:08.710,UAL123,33000,45.1234,-122.5678,90,180,1,0,0,0,0",
+			Raw:       "MSG,1,111,11111,4CA2D6,111111,2015/02/19,18:06:08.710,2015/02/19,18:06:08.710,UAL123,33000,450,180,45.1234,-122.5678,0,0,0,0,0,0",
 			Timestamp: time.Now().UTC(),
 			Source:    "integration-test",
 		},
 		{
-			Raw:       "MSG,4,111,11111,4CA2D7,111111,2015/02/19,18:06:09.710,2015/02/19,18:06:09.710,,34000,45.1235,-122.5679,95,185,1,0,0,0,0",
+			Raw:       "MSG,4,111,11111,4CA2D7,111111,2015/02/19,18:06:09.710,2015/02/19,18:06:09.710,,34000,480,185,45.1235,-122.5679,0,1200,0,0,0,0",
 			Timestamp: time.Now().UTC(),
 			Source:    "integration-test",
 		},
@@ -247,7 +248,7 @@ func TestIntegration_TrackerEnvironmentVariables(t *testing.T) {
 			}
 
 			if tt.expectRedisClient {
-				redisClient, err := redis.NewWithClient(tt.redisAddr)
+				redisClient, err := redis.New(tt.redisAddr)
 				if err != nil {
 					t.Errorf("Expected Redis client creation to succeed, got error: %v", err)
 				} else {
@@ -256,7 +257,7 @@ func TestIntegration_TrackerEnvironmentVariables(t *testing.T) {
 			}
 
 			if tt.expectNATSClient {
-				natsClient, err := nats.New(tt.natsURL)
+				natsClient, err := natsclient.New(tt.natsURL)
 				if err != nil {
 					t.Errorf("Expected NATS client creation to succeed, got error: %v", err)
 				} else {
@@ -302,7 +303,7 @@ func TestIntegration_TrackerStateTracker(t *testing.T) {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	redisClient, err := redis.NewWithClient(redisAddr)
+	redisClient, err := redis.New(redisAddr)
 	if err != nil {
 		t.Fatalf("Failed to create Redis client: %v", err)
 	}
@@ -319,12 +320,12 @@ func TestIntegration_TrackerStateTracker(t *testing.T) {
 	// Test processing different types of messages
 	testMessages := []*types.SBSMessage{
 		{
-			Raw:       "MSG,3,111,11111,4CA2D6,111111,2015/02/19,18:06:07.710,2015/02/19,18:06:07.710,,33000,45.1234,-122.5678,90,180,1,0,0,0,0",
+			Raw:       "MSG,3,111,11111,4CA2D6,111111,2015/02/19,18:06:07.710,2015/02/19,18:06:07.710,,33000,450,180,45.1234,-122.5678,0,0,0,0,0,0",
 			Timestamp: time.Now().UTC(),
 			Source:    "test-tracker",
 		},
 		{
-			Raw:       "MSG,1,111,11111,4CA2D6,111111,2015/02/19,18:06:08.710,2015/02/19,18:06:08.710,UAL123,33000,45.1234,-122.5678,90,180,1,0,0,0,0",
+			Raw:       "MSG,1,111,11111,4CA2D6,111111,2015/02/19,18:06:08.710,2015/02/19,18:06:08.710,UAL123,33000,450,180,45.1234,-122.5678,0,0,0,0,0,0",
 			Timestamp: time.Now().UTC(),
 			Source:    "test-tracker",
 		},
@@ -351,7 +352,7 @@ func TestIntegration_TrackerStateTracker(t *testing.T) {
 
 func startPostgreSQLContainer(t *testing.T, ctx context.Context) (testcontainers.Container, string) {
 	postgresContainer, err := postgres.Run(ctx,
-		"postgres:14-alpine",
+		"timescale/timescaledb:latest-pg14",
 		postgres.WithDatabase("test_db"),
 		postgres.WithUsername("test_user"),
 		postgres.WithPassword("test_password"),
@@ -374,7 +375,7 @@ func startPostgreSQLContainer(t *testing.T, ctx context.Context) (testcontainers
 }
 
 func startRedisContainer(t *testing.T, ctx context.Context) (testcontainers.Container, string) {
-	redisContainer, err := redis_test.Run(ctx,
+	redisContainer, err := rediscontainer.Run(ctx,
 		"redis:7-alpine",
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("Ready to accept connections").
@@ -384,11 +385,18 @@ func startRedisContainer(t *testing.T, ctx context.Context) (testcontainers.Cont
 		t.Fatalf("Failed to start Redis container: %v", err)
 	}
 
-	redisAddr, err := redisContainer.ConnectionString(ctx)
+	// Get host and port separately for Redis
+	host, err := redisContainer.Host(ctx)
 	if err != nil {
-		t.Fatalf("Failed to get Redis connection string: %v", err)
+		t.Fatalf("Failed to get Redis host: %v", err)
 	}
 
+	port, err := redisContainer.MappedPort(ctx, "6379")
+	if err != nil {
+		t.Fatalf("Failed to get Redis port: %v", err)
+	}
+
+	redisAddr := fmt.Sprintf("%s:%s", host, port.Port())
 	t.Logf("Redis container started at: %s", redisAddr)
 	return redisContainer, redisAddr
 }
@@ -429,9 +437,85 @@ func startNATSContainer(t *testing.T, ctx context.Context) (testcontainers.Conta
 }
 
 func runMigrations(dbConnStr string) error {
-	// This would normally run the migration logic
-	// For this test, we'll assume migrations are applied
-	// In a real scenario, you'd call the migrate package
+	// Import the migrate package and run migrations
+	// This simulates what the migrate command does
+	db, err := sql.Open("postgres", dbConnStr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer db.Close()
+
+	// Test connection
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// For now, we'll create the basic schema manually to avoid circular imports
+	// In a real scenario, you'd use the actual migration system
+	schema := `
+		CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+		CREATE TABLE IF NOT EXISTS aircraft_states (
+			time TIMESTAMPTZ NOT NULL,
+			hex_ident TEXT NOT NULL,
+			callsign TEXT,
+			altitude INTEGER,
+			ground_speed INTEGER,
+			track INTEGER,
+			latitude DOUBLE PRECISION,
+			longitude DOUBLE PRECISION,
+			vertical_rate INTEGER,
+			squawk TEXT,
+			on_ground BOOLEAN,
+			msg_type INTEGER,
+			source TEXT
+		);
+
+		SELECT create_hypertable('aircraft_states', 'time', if_not_exists => TRUE);
+
+		CREATE INDEX IF NOT EXISTS idx_aircraft_states_hex_ident ON aircraft_states (hex_ident);
+		CREATE INDEX IF NOT EXISTS idx_aircraft_states_callsign ON aircraft_states (callsign);
+
+		CREATE TABLE IF NOT EXISTS flights (
+			session_id TEXT PRIMARY KEY,
+			hex_ident TEXT NOT NULL,
+			callsign TEXT,
+			started_at TIMESTAMPTZ NOT NULL,
+			ended_at TIMESTAMPTZ,
+			first_latitude DOUBLE PRECISION,
+			first_longitude DOUBLE PRECISION,
+			last_latitude DOUBLE PRECISION,
+			last_longitude DOUBLE PRECISION,
+			max_altitude INTEGER,
+			max_ground_speed INTEGER
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_flights_hex_ident ON flights (hex_ident);
+		CREATE INDEX IF NOT EXISTS idx_flights_started_at ON flights (started_at);
+
+		CREATE TABLE IF NOT EXISTS system_stats (
+			time TIMESTAMPTZ NOT NULL,
+			total_messages BIGINT,
+			parsed_messages BIGINT,
+			failed_messages BIGINT,
+			stored_states BIGINT,
+			created_flights BIGINT,
+			updated_flights BIGINT,
+			ended_flights BIGINT,
+			active_aircraft INTEGER,
+			active_flights INTEGER,
+			last_message_time TIMESTAMPTZ,
+			avg_processing_time DOUBLE PRECISION
+		);
+
+		SELECT create_hypertable('system_stats', 'time', if_not_exists => TRUE);
+	`
+
+	_, err = db.Exec(schema)
+	if err != nil {
+		return fmt.Errorf("failed to create schema: %w", err)
+	}
+
 	return nil
 }
 

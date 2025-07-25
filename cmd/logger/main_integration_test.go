@@ -11,8 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go"
-	"github.com/saviobatista/sbs-logger/internal/nats"
+	natsclient "github.com/saviobatista/sbs-logger/internal/nats"
 	"github.com/saviobatista/sbs-logger/internal/types"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -87,14 +86,14 @@ func TestIntegration_LoggerWithRealNATS(t *testing.T) {
 			}
 
 			// Create NATS client for publishing
-			publishClient, err := nats.New(tt.natsURL)
+			publishClient, err := natsclient.New(tt.natsURL)
 			if err != nil {
 				t.Fatalf("Failed to create publish NATS client: %v", err)
 			}
 			defer publishClient.Close()
 
 			// Create logger subscribe client
-			subscribeClient, err := nats.New(tt.natsURL)
+			subscribeClient, err := natsclient.New(tt.natsURL)
 			if err != nil {
 				t.Fatalf("Failed to create subscribe NATS client: %v", err)
 			}
@@ -194,14 +193,14 @@ func TestIntegration_LoggerRotation(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Create NATS client for publishing
-	publishClient, err := nats.New(natsURL)
+	publishClient, err := natsclient.New(natsURL)
 	if err != nil {
 		t.Fatalf("Failed to create publish NATS client: %v", err)
 	}
 	defer publishClient.Close()
 
 	// Create logger subscribe client
-	subscribeClient, err := nats.New(natsURL)
+	subscribeClient, err := natsclient.New(natsURL)
 	if err != nil {
 		t.Fatalf("Failed to create subscribe NATS client: %v", err)
 	}
@@ -349,7 +348,7 @@ func TestIntegration_LoggerEnvironmentVariables(t *testing.T) {
 			os.Setenv("NATS_URL", tt.natsURL)
 
 			// Test environment parsing
-			outputDir, natsURL := parseEnvironment()
+			outputDir, natsURL := parseEnvironmentVars()
 
 			if tt.outputDir == "" {
 				if outputDir != "./logs" {
@@ -367,7 +366,7 @@ func TestIntegration_LoggerEnvironmentVariables(t *testing.T) {
 
 			// Test NATS client creation
 			if tt.expectNATSClient {
-				client, err := nats.New(natsURL)
+				client, err := natsclient.New(natsURL)
 				if err != nil {
 					t.Errorf("Expected NATS client creation to succeed, got error: %v", err)
 				}
@@ -416,7 +415,7 @@ func TestIntegration_LoggerGracefulShutdown(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Create NATS client
-	client, err := nats.New(natsURL)
+	client, err := natsclient.New(natsURL)
 	if err != nil {
 		t.Fatalf("Failed to create NATS client: %v", err)
 	}
@@ -456,8 +455,8 @@ func TestIntegration_LoggerGracefulShutdown(t *testing.T) {
 	}
 }
 
-// parseEnvironment parses environment variables (extracted for testability)
-func parseEnvironment() (string, string) {
+// parseEnvironmentVars parses environment variables (extracted for testability)
+func parseEnvironmentVars() (string, string) {
 	outputDir := os.Getenv("OUTPUT_DIR")
 	if outputDir == "" {
 		outputDir = "./logs"
