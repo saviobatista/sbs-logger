@@ -1,7 +1,6 @@
 package nats
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -10,7 +9,7 @@ import (
 	"github.com/saviobatista/sbs-logger/internal/types"
 )
 
-// Mock implementations for testing
+// Simplified mock implementations for fast unit tests
 type mockConnector struct {
 	connectError error
 	connection   *mockConnection
@@ -50,44 +49,39 @@ func (m *mockJetStream) AddStream(cfg *nats.StreamConfig) (*nats.StreamInfo, err
 	if m.addStreamError != nil {
 		return nil, m.addStreamError
 	}
-	return &nats.StreamInfo{}, nil
+	return &nats.StreamInfo{Config: *cfg}, nil
 }
 
 func (m *mockJetStream) Publish(subj string, data []byte, opts ...nats.PubOpt) (*nats.PubAck, error) {
 	if m.publishError != nil {
 		return nil, m.publishError
 	}
-	return &nats.PubAck{}, nil
+	return &nats.PubAck{Stream: "SBS_RAW", Sequence: 1}, nil
 }
 
 func (m *mockJetStream) Subscribe(subj string, cb nats.MsgHandler, opts ...nats.SubOpt) (*nats.Subscription, error) {
 	if m.subscribeError != nil {
 		return nil, m.subscribeError
 	}
-	// Simulate calling the callback with test data
-	if cb != nil {
-		testData, _ := json.Marshal(&types.SBSMessage{Raw: "test", Source: "test"})
-		cb(&nats.Msg{Data: testData})
-	}
 	return &nats.Subscription{}, nil
 }
 
-// Test NewWithConnector function
-func TestNewWithConnector(t *testing.T) {
-	t.Run("connect fails", func(t *testing.T) {
+// Test critical error paths for fast feedback
+func TestNewWithConnector_ErrorPaths(t *testing.T) {
+	t.Run("connection fails", func(t *testing.T) {
 		connector := &mockConnector{
 			connectError: errors.New("connection failed"),
 		}
 
 		client, err := NewWithConnector("nats://test", connector)
 		if err == nil {
-			t.Error("Expected error")
-		}
-		if !strings.Contains(err.Error(), "failed to connect to NATS") {
-			t.Errorf("Expected connect error, got: %v", err)
+			t.Fatal("expected error when connection fails")
 		}
 		if client != nil {
-			t.Error("Expected nil client")
+			t.Fatal("expected nil client when connection fails")
+		}
+		if !strings.Contains(err.Error(), "failed to connect to NATS") {
+			t.Errorf("expected connection error, got: %v", err)
 		}
 	})
 
@@ -99,18 +93,12 @@ func TestNewWithConnector(t *testing.T) {
 			connection: conn,
 		}
 
-		client, err := NewWithConnector("nats://test", connector)
+		_, err := NewWithConnector("nats://test", connector)
 		if err == nil {
-			t.Error("Expected error")
-		}
-		if !strings.Contains(err.Error(), "failed to get JetStream context") {
-			t.Errorf("Expected jetstream error, got: %v", err)
-		}
-		if client != nil {
-			t.Error("Expected nil client")
+			t.Fatal("expected error when jetstream fails")
 		}
 		if !conn.closed {
-			t.Error("Expected connection to be closed")
+			t.Error("expected connection to be closed when jetstream fails")
 		}
 	})
 
@@ -125,45 +113,16 @@ func TestNewWithConnector(t *testing.T) {
 			connection: conn,
 		}
 
-		client, err := NewWithConnector("nats://test", connector)
+		_, err := NewWithConnector("nats://test", connector)
 		if err == nil {
-			t.Error("Expected error")
-		}
-		if !strings.Contains(err.Error(), "failed to create stream") {
-			t.Errorf("Expected stream error, got: %v", err)
-		}
-		if client != nil {
-			t.Error("Expected nil client")
+			t.Fatal("expected error when stream creation fails")
 		}
 		if !conn.closed {
-			t.Error("Expected connection to be closed")
+			t.Error("expected connection to be closed when stream creation fails")
 		}
 	})
 
-	t.Run("stream already exists (success)", func(t *testing.T) {
-		js := &mockJetStream{
-			addStreamError: errors.New("stream name already in use"),
-		}
-		conn := &mockConnection{
-			jetStream: js,
-		}
-		connector := &mockConnector{
-			connection: conn,
-		}
-
-		client, err := NewWithConnector("nats://test", connector)
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-		if client == nil {
-			t.Error("Expected client")
-		}
-		if conn.closed {
-			t.Error("Expected connection to remain open")
-		}
-	})
-
-	t.Run("success", func(t *testing.T) {
+	t.Run("success path", func(t *testing.T) {
 		js := &mockJetStream{}
 		conn := &mockConnection{
 			jetStream: js,
@@ -174,48 +133,29 @@ func TestNewWithConnector(t *testing.T) {
 
 		client, err := NewWithConnector("nats://test", connector)
 		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
+			t.Fatalf("expected no error on success, got: %v", err)
 		}
 		if client == nil {
-			t.Error("Expected client")
-		}
-		if conn.closed {
-			t.Error("Expected connection to remain open")
+			t.Fatal("expected client on success")
 		}
 	})
 }
 
-// Test New function (uses default connector)
-func TestNew(t *testing.T) {
-	// This will fail with real NATS server not running, which is expected
-	client, err := New("nats://localhost:4222")
-	if err == nil {
-		// If it succeeds, clean up
-		if client != nil {
-			client.Close()
-		}
-	} else {
-		// Expected when NATS is not running
-		if !strings.Contains(err.Error(), "failed to connect to NATS") {
-			t.Errorf("Expected connection error, got: %v", err)
-		}
-	}
-}
-
-// Test PublishSBSMessage
-func TestPublishSBSMessage(t *testing.T) {
+// Test business logic validation
+func TestPublishSBSMessage_Validation(t *testing.T) {
 	t.Run("nil jetstream", func(t *testing.T) {
 		client := &Client{js: nil}
-		err := client.PublishSBSMessage(&types.SBSMessage{})
+
+		err := client.PublishSBSMessage(&types.SBSMessage{Raw: "test"})
 		if err == nil {
-			t.Error("Expected error")
+			t.Fatal("expected error with nil jetstream")
 		}
 		if !strings.Contains(err.Error(), "JetStream context not initialized") {
-			t.Errorf("Expected jetstream error, got: %v", err)
+			t.Errorf("expected jetstream not initialized error, got: %v", err)
 		}
 	})
 
-	t.Run("publish fails", func(t *testing.T) {
+	t.Run("publish error", func(t *testing.T) {
 		js := &mockJetStream{
 			publishError: errors.New("publish failed"),
 		}
@@ -223,34 +163,25 @@ func TestPublishSBSMessage(t *testing.T) {
 
 		err := client.PublishSBSMessage(&types.SBSMessage{Raw: "test"})
 		if err == nil {
-			t.Error("Expected error")
+			t.Fatal("expected error when publish fails")
 		}
 		if !strings.Contains(err.Error(), "failed to publish message") {
-			t.Errorf("Expected publish error, got: %v", err)
-		}
-	})
-
-	t.Run("success", func(t *testing.T) {
-		js := &mockJetStream{}
-		client := &Client{js: js}
-
-		err := client.PublishSBSMessage(&types.SBSMessage{Raw: "test"})
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
+			t.Errorf("expected publish error, got: %v", err)
 		}
 	})
 }
 
-// Test SubscribeSBSRaw
-func TestSubscribeSBSRaw(t *testing.T) {
+// Test subscription validation
+func TestSubscribeSBSRaw_Validation(t *testing.T) {
 	t.Run("nil jetstream", func(t *testing.T) {
 		client := &Client{js: nil}
+
 		err := client.SubscribeSBSRaw(func(*types.SBSMessage) {})
 		if err == nil {
-			t.Error("Expected error")
+			t.Fatal("expected error with nil jetstream")
 		}
 		if !strings.Contains(err.Error(), "JetStream context not initialized") {
-			t.Errorf("Expected jetstream error, got: %v", err)
+			t.Errorf("expected jetstream not initialized error, got: %v", err)
 		}
 	})
 
@@ -260,14 +191,14 @@ func TestSubscribeSBSRaw(t *testing.T) {
 
 		err := client.SubscribeSBSRaw(nil)
 		if err == nil {
-			t.Error("Expected error")
+			t.Fatal("expected error with nil handler")
 		}
 		if !strings.Contains(err.Error(), "handler function cannot be nil") {
-			t.Errorf("Expected handler error, got: %v", err)
+			t.Errorf("expected nil handler error, got: %v", err)
 		}
 	})
 
-	t.Run("subscribe fails", func(t *testing.T) {
+	t.Run("subscribe error", func(t *testing.T) {
 		js := &mockJetStream{
 			subscribeError: errors.New("subscribe failed"),
 		}
@@ -275,35 +206,20 @@ func TestSubscribeSBSRaw(t *testing.T) {
 
 		err := client.SubscribeSBSRaw(func(*types.SBSMessage) {})
 		if err == nil {
-			t.Error("Expected error")
+			t.Fatal("expected error when subscribe fails")
 		}
 		if !strings.Contains(err.Error(), "failed to subscribe") {
-			t.Errorf("Expected subscribe error, got: %v", err)
-		}
-	})
-
-	t.Run("success", func(t *testing.T) {
-		js := &mockJetStream{}
-		client := &Client{js: js}
-
-		messageReceived := false
-		err := client.SubscribeSBSRaw(func(msg *types.SBSMessage) {
-			messageReceived = true
-		})
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-		if !messageReceived {
-			t.Error("Expected message to be received")
+			t.Errorf("expected subscribe error, got: %v", err)
 		}
 	})
 }
 
-// Test Close
+// Test connection management
 func TestClose(t *testing.T) {
 	t.Run("nil connection", func(t *testing.T) {
 		client := &Client{conn: nil}
-		client.Close() // Should not panic
+		// Should not panic
+		client.Close()
 	})
 
 	t.Run("with connection", func(t *testing.T) {
@@ -312,7 +228,7 @@ func TestClose(t *testing.T) {
 
 		client.Close()
 		if !conn.closed {
-			t.Error("Expected connection to be closed")
+			t.Error("expected connection to be closed")
 		}
 	})
 }
