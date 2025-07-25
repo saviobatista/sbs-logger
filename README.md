@@ -414,3 +414,63 @@ For issues and questions:
 - [ADS-B Exchange](https://www.adsbexchange.com/)
 - [FlightAware](https://flightaware.com/)
 - [OpenSky Network](https://opensky-network.org/) 
+
+## Testing
+
+This project includes comprehensive testing with multiple approaches:
+
+### Unit Tests (Fast, No Dependencies)
+- **Simplified mocked tests**: Focus on critical error paths and business logic validation
+- **Purpose**: Fast feedback during development
+- **Speed**: Very fast (~0.4 seconds)
+- **Run with**: `go test -short ./internal/nats/...`
+
+### Integration Tests (Real NATS Server)
+- **Testcontainers**: Spin up real NATS server with JetStream in Docker
+- **Coverage**: 91.8% including real implementations and comprehensive scenarios
+- **Purpose**: Confidence that code works with real NATS servers
+- **Speed**: Slower (~2 seconds) due to container startup
+- **Requirements**: Docker must be running
+- **Run with**: `go test ./internal/nats/...` (includes both unit and integration)
+
+### Running Tests
+
+```bash
+# Run only fast unit tests (mocked) - DEFAULT
+go test -v ./internal/nats/...
+
+# Run integration tests only (requires Docker)
+go test -tags=integration -v ./internal/nats/... -run TestIntegration
+
+# Run all tests (unit + integration)
+go test -tags=integration -v ./internal/nats/...
+
+# Run tests with coverage
+go test -tags=integration -coverprofile=coverage.out ./internal/nats/...
+go tool cover -html=coverage.out  # View coverage in browser
+
+# Run specific test
+go test -v ./internal/nats/... -run TestNewWithConnector
+
+# Using make (recommended)
+make test          # Unit tests only
+make test-integration  # Integration tests
+make test-all      # All tests with coverage
+```
+
+### Test Architecture
+
+**Unit Tests (`client_test.go`)**:
+- Simplified mocks for essential error paths and validation
+- Critical business logic verification
+- No external dependencies
+- Instant feedback during development
+
+**Integration Tests (`client_integration_test.go`)**:
+- Real NATS server via testcontainers
+- Comprehensive end-to-end testing
+- Tests actual NATS/JetStream behavior
+- Covers real implementation functions
+- Validates message persistence and flow
+
+This dual approach provides fast development feedback while ensuring comprehensive coverage through real-world testing. 
