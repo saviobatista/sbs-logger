@@ -66,8 +66,7 @@ The system consists of several microservices that communicate via NATS:
 
 - **Ingestor**: Connects to SBS sources and publishes messages to NATS
 - **Logger**: Subscribes to messages and writes to daily log files
-- **Tracker**: Processes messages, tracks aircraft states, and manages flight sessions
-- **Migrate**: Database schema management and migrations
+- **Tracker**: Processes messages, tracks aircraft states, manages flight sessions, and handles database migrations
 - **NATS**: Message broker for inter-service communication
 - **TimescaleDB**: Time-series database for aircraft states and statistics
 - **Redis**: Caching layer for active aircraft and flight data
@@ -130,14 +129,15 @@ go mod download
 go build ./cmd/ingestor
 go build ./cmd/logger
 go build ./cmd/tracker
-go build ./cmd/migrate
 ```
 
-3. Set up the database:
+3. Start the services:
 ```bash
-# Run migrations
-./migrate -db="postgres://user:pass@localhost:5432/sbs_data?sslmode=disable"
+# Migrations will run automatically when the tracker service starts
+./tracker
 ```
+
+The tracker service will automatically run database migrations on startup.
 
 ## ⚙️ Configuration
 
@@ -163,9 +163,6 @@ cp .env.sample .env
 - `NATS_URL`: NATS server URL (default: `nats://nats:4222`)
 - `DB_CONN_STR`: Database connection string
 - `REDIS_ADDR`: Redis server address (default: `redis:6379`)
-
-#### Migrate
-- `DB_CONN_STR`: Database connection string
 
 ### Environment Variables Organization
 
@@ -254,8 +251,7 @@ sbs-logger/
 ├── cmd/                    # Application entry points
 │   ├── ingestor/          # SBS message ingestion
 │   ├── logger/            # Log file management
-│   ├── tracker/           # Aircraft state tracking
-│   └── migrate/           # Database migrations
+│   └── tracker/           # Aircraft state tracking
 ├── internal/              # Private application code
 │   ├── capture/           # Network capture logic
 │   ├── config/            # Configuration management
@@ -325,7 +321,6 @@ The project provides pre-built Docker images on multiple registries:
 docker pull ghcr.io/saviobatista/sbs-logger/sbs-ingestor:latest
 docker pull ghcr.io/saviobatista/sbs-logger/sbs-logger:latest
 docker pull ghcr.io/saviobatista/sbs-logger/sbs-tracker:latest
-docker pull ghcr.io/saviobatista/sbs-logger/sbs-migrate:latest
 ```
 
 #### Docker Hub
@@ -334,7 +329,6 @@ docker pull ghcr.io/saviobatista/sbs-logger/sbs-migrate:latest
 docker pull saviobatista/sbs-ingestor:latest
 docker pull saviobatista/sbs-logger:latest
 docker pull saviobatista/sbs-tracker:latest
-docker pull saviobatista/sbs-migrate:latest
 ```
 
 ### Production Considerations

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -11,11 +12,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/saviobatista/sbs-logger/internal/db"
+	"github.com/saviobatista/sbs-logger/internal/db/migrations"
 	"github.com/saviobatista/sbs-logger/internal/nats"
 	"github.com/saviobatista/sbs-logger/internal/parser"
 	"github.com/saviobatista/sbs-logger/internal/redis"
 	"github.com/saviobatista/sbs-logger/internal/stats"
 	"github.com/saviobatista/sbs-logger/internal/types"
+
+	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
 // DBClient interface for testability
@@ -307,6 +311,15 @@ func createClients(natsURL, dbConnStr, redisAddr string) (*nats.Client, *db.Clie
 		return nil, nil, nil, fmt.Errorf("failed to create database client: %w", err)
 	}
 
+	// Run database migrations
+	if err := runMigrations(dbConnStr); err != nil {
+		natsClient.Close()
+		if closeErr := dbClient.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "error closing dbClient: %v\n", closeErr)
+		}
+		return nil, nil, nil, fmt.Errorf("failed to run migrations: %w", err)
+	}
+
 	// Create Redis client
 	redisClient, err := redis.New(redisAddr)
 	if err != nil {
@@ -318,6 +331,44 @@ func createClients(natsURL, dbConnStr, redisAddr string) (*nats.Client, *db.Clie
 	}
 
 	return natsClient, dbClient, redisClient, nil
+}
+
+// runMigrations runs database migrations on startup
+func runMigrations(dbConnStr string) error {
+	log.Println("Running database migrations...")
+
+	// Connect to database for migrations
+	migrationDB, err := sql.Open("postgres", dbConnStr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database for migrations: %w", err)
+	}
+	defer func() {
+		if err := migrationDB.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing migration db: %v\n", err)
+		}
+	}()
+
+	// Test connection
+	if err := migrationDB.Ping(); err != nil {
+		return fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Create migrator
+	migrator := migrations.New(migrationDB)
+
+	// Define migrations
+	migrationList := []*migrations.Migration{
+		migrations.InitialSchema,
+		migrations.RetentionPolicies,
+	}
+
+	// Execute migrations
+	if err := migrator.Migrate(migrationList); err != nil {
+		return fmt.Errorf("failed to apply migrations: %w", err)
+	}
+
+	log.Println("Database migrations completed successfully")
+	return nil
 }
 
 // setupStateTracker creates and starts the state tracker

@@ -14,7 +14,7 @@ if ! docker info &> /dev/null; then
 fi
 
 # Services to test
-SERVICES=("ingestor" "logger" "tracker" "migrate")
+SERVICES=("ingestor" "logger" "tracker")
 
 for service in "${SERVICES[@]}"; do
     echo "🔨 Building $service for AMD64..."

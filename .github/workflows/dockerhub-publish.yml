@@ -93,9 +93,6 @@ jobs:
           - service: tracker
             dockerfile: Dockerfile.tracker
             description: 'SBS Tracker Service'
-          - service: migrate
-            dockerfile: Dockerfile.migrate
-            description: 'SBS Database Migration Service'
 
     steps:
       - name: Checkout code
@@ -163,7 +160,6 @@ jobs:
           echo "  - saviobatista/sbs-ingestor"
           echo "  - saviobatista/sbs-logger"
           echo "  - saviobatista/sbs-tracker"
-          echo "  - saviobatista/sbs-migrate"
           echo "🏷️  Tags: ${{ needs.validate-release.outputs.release_tag }}, latest"
           echo "🔗 Docker Hub: https://hub.docker.com/r/saviobatista/sbs-logger"
 

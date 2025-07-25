@@ -68,16 +68,6 @@ services:
       - timescaledb
       - redis
 
-  migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile.migrate
-    container_name: sbs-migrate
-    environment:
-      - DB_CONN_STR=${DB_CONN_STR:-postgres://sbs:sbs_password@timescaledb:5432/sbs_data?sslmode=disable}
-    depends_on:
-      - timescaledb
-
   nats:
     image: nats:latest
     container_name: nats

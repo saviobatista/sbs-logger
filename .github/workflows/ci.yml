@@ -69,8 +69,6 @@ jobs:
             binary: logger
           - name: tracker
             binary: tracker
-          - name: migrate
-            binary: migrate
 
     steps:
       - name: Checkout code
@@ -163,8 +161,6 @@ jobs:
             dockerfile: Dockerfile.logger
           - service: tracker
             dockerfile: Dockerfile.tracker
-          - service: migrate
-            dockerfile: Dockerfile.migrate
 
     steps:
       - name: Checkout code
@@ -442,17 +438,12 @@ jobs:
           name: tracker-binaries
           path: tracker-binaries
 
-      - name: Download migrate artifacts
-        uses: actions/download-artifact@v4
-        timeout-minutes: 5
-        with:
-          name: migrate-binaries
-          path: migrate-binaries
+
 
       - name: Verify artifacts downloaded
         run: |
           echo "Verifying all artifacts were downloaded successfully..."
-          for binary in ingestor logger tracker migrate; do
+          for binary in ingestor logger tracker; do
             if [ ! -d "${binary}-binaries" ]; then
               echo "❌ Error: ${binary}-binaries directory not found"
               exit 1
@@ -480,7 +471,7 @@ jobs:
           # Debug: List downloaded artifacts
           echo "Checking downloaded artifacts..."
           ls -la
-          for binary in ingestor logger tracker migrate; do
+          for binary in ingestor logger tracker; do
             if [ -d "${binary}-binaries" ]; then
               echo "Found ${binary}-binaries directory:"
               ls -la "${binary}-binaries/"
@@ -493,7 +484,7 @@ jobs:
           mkdir -p release-assets
           
           # Package binaries with validation
-          for binary in ingestor logger tracker migrate; do
+          for binary in ingestor logger tracker; do
             if [ -d "${binary}-binaries" ]; then
               echo "Packaging ${binary} binaries..."
               tar -czf "release-assets/${binary}-${VERSION}-binaries.tar.gz" -C "${binary}-binaries" .
@@ -527,7 +518,6 @@ jobs:
           - sbs-ingestor:$TAG
           - sbs-logger:$TAG
           - sbs-tracker:$TAG
-          - sbs-migrate:$TAG
           EOF
           
           # Create the release with proper notes (if it doesn't exist)
