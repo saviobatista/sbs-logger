@@ -33,12 +33,31 @@ test: ## Run unit tests only (fast)
 test-integration: ## Run integration tests only (requires Docker)
 	go test -tags=integration -v ./... -run TestIntegration
 
+test-integration-cmd: ## Run integration tests for cmd packages only (requires Docker) 
+	go test -tags=integration -v ./cmd/... -run TestIntegration
+
+test-integration-migrate: ## Run migration integration tests (requires Docker)
+	go test -tags=integration -v ./cmd/migrate -run TestIntegration
+
+test-integration-ingestor: ## Run ingestor integration tests (requires Docker)
+	go test -tags=integration -v ./cmd/ingestor -run TestIntegration
+
+test-integration-logger: ## Run logger integration tests (requires Docker)
+	go test -tags=integration -v ./cmd/logger -run TestIntegration
+
+test-integration-tracker: ## Run tracker integration tests (requires Docker)
+	go test -tags=integration -v ./cmd/tracker -run TestIntegration
+
 test-all: ## Run all tests (unit + integration) with coverage
 	go test -tags=integration -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
 test-short: ## Run tests without race detection
 	go test -v ./...
+
+test-all-with-integration: ## Run all tests (unit + integration) with comprehensive coverage
+	go test -tags=integration -v -race -coverprofile=coverage-full.out ./...
+	go tool cover -html=coverage-full.out -o coverage-full.html
 
 # Building
 build: ## Build all binaries
