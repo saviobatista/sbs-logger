@@ -321,7 +321,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Bump and tag version
-        uses: jefflinse/pr-semver-bump@v1.6.0
+        uses: jefflinse/pr-semver-bump@v1.7.3
         id: bumpr
         with:
           mode: bump
