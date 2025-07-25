@@ -129,7 +129,6 @@ go mod download
 go build ./cmd/ingestor
 go build ./cmd/logger
 go build ./cmd/tracker
-go build ./cmd/migrate
 ```
 
 3. Start the services:
@@ -164,9 +163,6 @@ cp .env.sample .env
 - `NATS_URL`: NATS server URL (default: `nats://nats:4222`)
 - `DB_CONN_STR`: Database connection string
 - `REDIS_ADDR`: Redis server address (default: `redis:6379`)
-
-#### Migrate
-- `DB_CONN_STR`: Database connection string
 
 ### Environment Variables Organization
 
@@ -255,8 +251,7 @@ sbs-logger/
 ├── cmd/                    # Application entry points
 │   ├── ingestor/          # SBS message ingestion
 │   ├── logger/            # Log file management
-│   ├── tracker/           # Aircraft state tracking
-│   └── migrate/           # Database migrations
+│   └── tracker/           # Aircraft state tracking
 ├── internal/              # Private application code
 │   ├── capture/           # Network capture logic
 │   ├── config/            # Configuration management
@@ -326,7 +321,6 @@ The project provides pre-built Docker images on multiple registries:
 docker pull ghcr.io/saviobatista/sbs-logger/sbs-ingestor:latest
 docker pull ghcr.io/saviobatista/sbs-logger/sbs-logger:latest
 docker pull ghcr.io/saviobatista/sbs-logger/sbs-tracker:latest
-docker pull ghcr.io/saviobatista/sbs-logger/sbs-migrate:latest
 ```
 
 #### Docker Hub
@@ -335,7 +329,6 @@ docker pull ghcr.io/saviobatista/sbs-logger/sbs-migrate:latest
 docker pull saviobatista/sbs-ingestor:latest
 docker pull saviobatista/sbs-logger:latest
 docker pull saviobatista/sbs-tracker:latest
-docker pull saviobatista/sbs-migrate:latest
 ```
 
 ### Production Considerations
