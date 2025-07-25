@@ -408,7 +408,7 @@ jobs:
       - name: List available artifacts
         run: |
           echo "Available artifacts from previous jobs:"
-          gh run list --limit 5 --json artifacts,status,conclusion,headBranch,headSha
+          gh run list --limit 5 --json status,conclusion,headBranch,headSha,name,number,workflowName
           echo "Current run ID: ${{ github.run_id }}"
 
       - name: Check build job status
