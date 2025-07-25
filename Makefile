@@ -7,7 +7,7 @@ BINARY_DIR=bin
 DOCKER_REGISTRY=ghcr.io
 IMAGE_PREFIX=savio/sbs-logger
 VERSION=$(shell git describe --tags --always --dirty)
-SERVICES=ingestor logger tracker migrate
+SERVICES=ingestor logger tracker
 
 # Default target
 help: ## Show this help message
@@ -105,12 +105,7 @@ logs: ## Show logs from all services
 logs-%: ## Show logs from specific service (e.g., logs-ingestor)
 	docker-compose logs -f $*
 
-# Database
-migrate: ## Run database migrations
-	docker-compose run --rm migrate
-
-migrate-rollback: ## Rollback last migration
-	docker-compose run --rm migrate -rollback
+# Database migrations are now handled automatically by the tracker service
 
 # Utilities
 clean: ## Clean build artifacts

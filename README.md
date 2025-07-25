@@ -66,8 +66,7 @@ The system consists of several microservices that communicate via NATS:
 
 - **Ingestor**: Connects to SBS sources and publishes messages to NATS
 - **Logger**: Subscribes to messages and writes to daily log files
-- **Tracker**: Processes messages, tracks aircraft states, and manages flight sessions
-- **Migrate**: Database schema management and migrations
+- **Tracker**: Processes messages, tracks aircraft states, manages flight sessions, and handles database migrations
 - **NATS**: Message broker for inter-service communication
 - **TimescaleDB**: Time-series database for aircraft states and statistics
 - **Redis**: Caching layer for active aircraft and flight data
@@ -133,11 +132,13 @@ go build ./cmd/tracker
 go build ./cmd/migrate
 ```
 
-3. Set up the database:
+3. Start the services:
 ```bash
-# Run migrations
-./migrate -db="postgres://user:pass@localhost:5432/sbs_data?sslmode=disable"
+# Migrations will run automatically when the tracker service starts
+./tracker
 ```
+
+The tracker service will automatically run database migrations on startup.
 
 ## ⚙️ Configuration
 
