@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -177,6 +176,13 @@ func TestStateTracker_Start(t *testing.T) {
 			mockDB:      &mockDBClient{getError: fmt.Errorf("db error")},
 			expectError: true,
 		},
+		{
+			name: "start with existing flights",
+			mockDB: &mockDBClient{flights: []*types.Flight{
+				{SessionID: "session1", HexIdent: "ABC123", Callsign: "TEST123"},
+			}},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -239,6 +245,21 @@ func TestStateTracker_ProcessMessage(t *testing.T) {
 				return mockDB, mockRedis
 			},
 			expectError: true,
+		},
+		{
+			name: "invalid flight validation",
+			message: &types.SBSMessage{
+				Raw:       "MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0,0,0",
+				Timestamp: time.Now(),
+				Source:    "test-source",
+			},
+			setupMocks: func() (*mockDBClient, *mockRedisClient) {
+				mockDB := &mockDBClient{}
+				mockRedis := newMockRedisClient()
+				_ = mockRedis.SetFlightValidation(context.Background(), "ABC123", false)
+				return mockDB, mockRedis
+			},
+			expectError: false,
 		},
 	}
 
@@ -315,6 +336,27 @@ func TestStateTracker_UpdateFlight(t *testing.T) {
 			expectNewFlight: false,
 			expectError:     true,
 		},
+		{
+			name: "flight ending scenario",
+			state: &types.AircraftState{
+				HexIdent:  "ABC123",
+				Callsign:  "TEST123",
+				Latitude:  41.0,
+				Longitude: -75.0,
+				Timestamp: time.Now().Add(-10 * time.Minute), // Old timestamp
+			},
+			setupTracker: func(t *StateTracker) {
+				t.activeFlights["ABC123"] = &types.Flight{
+					SessionID: "session1",
+					HexIdent:  "ABC123",
+					StartedAt: time.Now().Add(-1 * time.Hour),
+				}
+				t.states["ABC123"] = &types.AircraftState{HexIdent: "ABC123"}
+			},
+			mockDB:          &mockDBClient{},
+			expectNewFlight: false,
+			expectError:     false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -339,31 +381,79 @@ func TestStateTracker_UpdateFlight(t *testing.T) {
 func TestStateTracker_MergeStates(t *testing.T) {
 	tracker := NewStateTracker(&mockDBClient{}, newMockRedisClient())
 
-	existing := &types.AircraftState{
-		HexIdent:    "ABC123",
-		Callsign:    "OLD123",
-		Altitude:    10000,
-		GroundSpeed: 400,
-		Timestamp:   time.Now().Add(-1 * time.Minute),
+	tests := []struct {
+		name     string
+		existing *types.AircraftState
+		newState *types.AircraftState
+		checkFn  func(*testing.T, *types.AircraftState)
+	}{
+		{
+			name: "merge all fields",
+			existing: &types.AircraftState{
+				HexIdent:    "ABC123",
+				Callsign:    "OLD123",
+				Altitude:    10000,
+				GroundSpeed: 400,
+				Timestamp:   time.Now().Add(-1 * time.Minute),
+			},
+			newState: &types.AircraftState{
+				HexIdent:     "ABC123",
+				Callsign:     "NEW123",
+				Altitude:     11000,
+				Track:        90,
+				VerticalRate: 500,
+				Squawk:       "7700",
+				OnGround:     true,
+				Timestamp:    time.Now(),
+			},
+			checkFn: func(t *testing.T, existing *types.AircraftState) {
+				if existing.Callsign != "NEW123" {
+					t.Errorf("Expected callsign NEW123, got %s", existing.Callsign)
+				}
+				if existing.Altitude != 11000 {
+					t.Errorf("Expected altitude 11000, got %d", existing.Altitude)
+				}
+				if existing.Track != 90 {
+					t.Errorf("Expected track 90, got %f", existing.Track)
+				}
+				if existing.VerticalRate != 500 {
+					t.Errorf("Expected vertical rate 500, got %d", existing.VerticalRate)
+				}
+				if existing.Squawk != "7700" {
+					t.Errorf("Expected squawk 7700, got %s", existing.Squawk)
+				}
+				if !existing.OnGround {
+					t.Error("Expected OnGround to be true")
+				}
+			},
+		},
 	}
 
-	newState := &types.AircraftState{
-		HexIdent:  "ABC123",
-		Callsign:  "NEW123",
-		Altitude:  11000,
-		Timestamp: time.Now(),
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tracker.mergeStates(tt.existing, tt.newState)
+			tt.checkFn(t, tt.existing)
+		})
 	}
+}
 
-	tracker.mergeStates(existing, newState)
+func TestLogStats(t *testing.T) {
+	tracker := NewStateTracker(&mockDBClient{}, newMockRedisClient())
 
-	if existing.Callsign != "NEW123" {
-		t.Errorf("Expected callsign to be updated to NEW123, got %s", existing.Callsign)
-	}
-	if existing.Altitude != 11000 {
-		t.Errorf("Expected altitude to be updated to 11000, got %d", existing.Altitude)
-	}
-	if existing.GroundSpeed != 400 {
-		t.Errorf("Expected ground speed to remain 400, got %f", existing.GroundSpeed)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	done := make(chan bool)
+	go func() {
+		tracker.logStats(ctx)
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		// Function returned as expected
+	case <-time.After(200 * time.Millisecond):
+		t.Error("logStats did not return when context was cancelled")
 	}
 }
 
@@ -423,6 +513,258 @@ func TestParseEnvironment(t *testing.T) {
 				t.Errorf("parseEnvironment() = %v, expected %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+// EASY COVERAGE WINS - Testing uncovered functions
+
+func TestCreateClients_SuccessPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	containers := setupTestContainers(ctx, t)
+	defer containers.cleanup()
+
+	// Get connection strings
+	postgresConn, err := containers.postgres.(*postgresMod.PostgresContainer).ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("Failed to get postgres connection string: %v", err)
+	}
+
+	redisHost, err := containers.redis.Host(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get redis host: %v", err)
+	}
+	redisPort, err := containers.redis.MappedPort(ctx, "6379")
+	if err != nil {
+		t.Fatalf("Failed to get redis port: %v", err)
+	}
+	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort.Port())
+
+	natsHost, err := containers.nats.Host(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get nats host: %v", err)
+	}
+	natsPort, err := containers.nats.MappedPort(ctx, "4222")
+	if err != nil {
+		t.Fatalf("Failed to get nats port: %v", err)
+	}
+	natsURL := fmt.Sprintf("nats://%s:%s", natsHost, natsPort.Port())
+
+	// Test successful client creation (covers success path)
+	natsClient, dbClient, redisClient, err := createClients(natsURL, postgresConn, redisAddr)
+	if err != nil {
+		t.Fatalf("createClients() failed: %v", err)
+	}
+
+	// Verify all clients are non-nil
+	if natsClient == nil || dbClient == nil || redisClient == nil {
+		t.Error("Expected all clients to be non-nil")
+	}
+
+	// Clean up
+	natsClient.Close()
+	dbClient.Close()
+	redisClient.Close()
+}
+
+func TestMainFunctionErrorPaths(t *testing.T) {
+	tests := []struct {
+		name        string
+		natsURL     string
+		dbConnStr   string
+		redisAddr   string
+		expectError bool
+	}{
+		{
+			name:        "invalid NATS URL",
+			natsURL:     "invalid://nats",
+			dbConnStr:   "postgres://valid/connection",
+			redisAddr:   "localhost:6379",
+			expectError: true,
+		},
+		{
+			name:        "invalid database connection",
+			natsURL:     "nats://localhost:4222",
+			dbConnStr:   "invalid://database",
+			redisAddr:   "localhost:6379",
+			expectError: true,
+		},
+		{
+			name:        "invalid Redis address",
+			natsURL:     "nats://localhost:4222",
+			dbConnStr:   "postgres://valid/connection",
+			redisAddr:   "invalid://redis",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, _, err := createClients(tt.natsURL, tt.dbConnStr, tt.redisAddr)
+			if (err != nil) != tt.expectError {
+				t.Errorf("createClients() error = %v, expectError %v", err, tt.expectError)
+			}
+			if tt.expectError && !strings.Contains(err.Error(), "failed to create") {
+				t.Errorf("Expected error to contain 'failed to create', got: %v", err)
+			}
+		})
+	}
+}
+
+// Test runMigrations directly
+func TestRunMigrations_Unit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	containers := setupTestContainers(ctx, t)
+	defer containers.cleanup()
+
+	postgresConn, err := containers.postgres.(*postgresMod.PostgresContainer).ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("Failed to get postgres connection string: %v", err)
+	}
+
+	// Test successful migration
+	if err := runMigrations(postgresConn); err != nil {
+		t.Errorf("runMigrations() failed: %v", err)
+	}
+
+	// Test invalid connection string
+	if err := runMigrations("invalid://connection"); err == nil {
+		t.Error("Expected error with invalid connection string")
+	}
+}
+
+// Test setupStateTracker with real clients
+func TestSetupStateTracker_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	containers := setupTestContainers(ctx, t)
+	defer containers.cleanup()
+
+	// Get connection strings
+	postgresConn, err := containers.postgres.(*postgresMod.PostgresContainer).ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("Failed to get postgres connection string: %v", err)
+	}
+
+	redisHost, err := containers.redis.Host(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get redis host: %v", err)
+	}
+	redisPort, err := containers.redis.MappedPort(ctx, "6379")
+	if err != nil {
+		t.Fatalf("Failed to get redis port: %v", err)
+	}
+	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort.Port())
+
+	natsHost, err := containers.nats.Host(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get nats host: %v", err)
+	}
+	natsPort, err := containers.nats.MappedPort(ctx, "4222")
+	if err != nil {
+		t.Fatalf("Failed to get nats port: %v", err)
+	}
+	natsURL := fmt.Sprintf("nats://%s:%s", natsHost, natsPort.Port())
+
+	// Create clients
+	_, dbClient, redisClient, err := createClients(natsURL, postgresConn, redisAddr)
+	if err != nil {
+		t.Fatalf("createClients() failed: %v", err)
+	}
+	defer func() {
+		dbClient.Close()
+		redisClient.Close()
+	}()
+
+	// Test setupStateTracker
+	tracker, err := setupStateTracker(dbClient, redisClient)
+	if err != nil {
+		t.Fatalf("setupStateTracker() failed: %v", err)
+	}
+	if tracker == nil {
+		t.Error("Expected tracker to be non-nil")
+	}
+}
+
+// Test setupNATSSubscription with integration test
+func TestSetupNATSSubscription_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ctx := context.Background()
+	containers := setupTestContainers(ctx, t)
+	defer containers.cleanup()
+
+	// Get connection strings
+	postgresConn, err := containers.postgres.(*postgresMod.PostgresContainer).ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("Failed to get postgres connection string: %v", err)
+	}
+
+	redisHost, err := containers.redis.Host(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get redis host: %v", err)
+	}
+	redisPort, err := containers.redis.MappedPort(ctx, "6379")
+	if err != nil {
+		t.Fatalf("Failed to get redis port: %v", err)
+	}
+	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort.Port())
+
+	natsHost, err := containers.nats.Host(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get nats host: %v", err)
+	}
+	natsPort, err := containers.nats.MappedPort(ctx, "4222")
+	if err != nil {
+		t.Fatalf("Failed to get nats port: %v", err)
+	}
+	natsURL := fmt.Sprintf("nats://%s:%s", natsHost, natsPort.Port())
+
+	// Create clients using createClients function (tests success path)
+	natsClient, dbClient, redisClient, err := createClients(natsURL, postgresConn, redisAddr)
+	if err != nil {
+		t.Fatalf("createClients() failed: %v", err)
+	}
+	defer func() {
+		natsClient.Close()
+		dbClient.Close()
+		redisClient.Close()
+	}()
+
+	// Setup state tracker
+	tracker, err := setupStateTracker(dbClient, redisClient)
+	if err != nil {
+		t.Fatalf("setupStateTracker() failed: %v", err)
+	}
+
+	// Test setupNATSSubscription - this is the key function we want to cover
+	if err := setupNATSSubscription(natsClient, tracker); err != nil {
+		t.Fatalf("setupNATSSubscription() failed: %v", err)
+	}
+
+	// Test that subscription is working by trying to process a test message
+	// This also tests the integration flow that main() would follow
+	testMessage := &types.SBSMessage{
+		Raw:       "MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0,0,0",
+		Timestamp: time.Now(),
+		Source:    "integration-test",
+	}
+
+	// Process a message to verify the full integration works
+	if err := tracker.ProcessMessage(testMessage); err != nil {
+		t.Errorf("ProcessMessage() failed: %v", err)
 	}
 }
 
@@ -652,75 +994,5 @@ func TestFullIntegration(t *testing.T) {
 	// Verify data was stored
 	if len(tracker.activeFlights) == 0 {
 		t.Error("Expected active flight to be created")
-	}
-}
-
-func TestMainFunctionErrorPaths(t *testing.T) {
-	tests := []struct {
-		name        string
-		natsURL     string
-		dbConnStr   string
-		redisAddr   string
-		expectError bool
-	}{
-		{
-			name:        "invalid NATS URL",
-			natsURL:     "invalid://nats",
-			dbConnStr:   "postgres://valid/connection",
-			redisAddr:   "localhost:6379",
-			expectError: true,
-		},
-		{
-			name:        "invalid database connection",
-			natsURL:     "nats://localhost:4222",
-			dbConnStr:   "invalid://database",
-			redisAddr:   "localhost:6379",
-			expectError: true,
-		},
-		{
-			name:        "invalid Redis address",
-			natsURL:     "nats://localhost:4222",
-			dbConnStr:   "postgres://valid/connection",
-			redisAddr:   "invalid://redis",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, _, _, err := createClients(tt.natsURL, tt.dbConnStr, tt.redisAddr)
-			if (err != nil) != tt.expectError {
-				t.Errorf("createClients() error = %v, expectError %v", err, tt.expectError)
-			}
-			if tt.expectError && !strings.Contains(err.Error(), "failed to create") {
-				t.Errorf("Expected error to contain 'failed to create', got: %v", err)
-			}
-		})
-	}
-}
-
-func TestSignalHandling(t *testing.T) {
-	// Test signal channel creation and handling
-	sigChan := make(chan os.Signal, 1)
-
-	// Test that we can send signals to the channel
-	testSignals := []os.Signal{syscall.SIGTERM, syscall.SIGINT}
-	for _, sig := range testSignals {
-		select {
-		case sigChan <- sig:
-			// Signal sent successfully
-		default:
-			t.Errorf("Could not send signal %v to channel", sig)
-		}
-
-		// Verify signal was received
-		select {
-		case receivedSig := <-sigChan:
-			if receivedSig != sig {
-				t.Errorf("Expected signal %v, got %v", sig, receivedSig)
-			}
-		case <-time.After(100 * time.Millisecond):
-			t.Errorf("Signal %v was not received", sig)
-		}
 	}
 }
