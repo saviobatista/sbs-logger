@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/savio/sbs-logger/internal/db/migrations"
+	"github.com/saviobatista/sbs-logger/internal/db/migrations"
 )
 
 // TestMain_Integration tests the full main function with actual command execution

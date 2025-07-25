@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/savio/sbs-logger/internal/nats"
-	"github.com/savio/sbs-logger/internal/types"
+	"github.com/saviobatista/sbs-logger/internal/nats"
+	"github.com/saviobatista/sbs-logger/internal/types"
 )
 
 func main() {

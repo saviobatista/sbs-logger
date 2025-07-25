@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/savio/sbs-logger/internal/types"
+	"github.com/saviobatista/sbs-logger/internal/types"
 )
 
 // MessageType represents the type of SBS message
