@@ -102,6 +102,7 @@ func (t *StateTracker) ProcessMessage(msg *types.SBSMessage) error {
 	state, err := parser.ParseMessage(msg.Raw, msg.Timestamp)
 	if err != nil {
 		t.stats.IncrementFailedMessages()
+		log.Printf("Failed to parse message: %v\nRaw message: %q", err, msg.Raw)
 		return fmt.Errorf("failed to parse message: %w", err)
 	}
 

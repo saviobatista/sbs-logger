@@ -23,30 +23,64 @@ const (
 	MsgTypeNewTrack        MessageType = 7
 	MsgTypeNewLatLon       MessageType = 8
 	MsgTypeNewGround       MessageType = 9
+	MsgTypeStatus          MessageType = 10 // STA messages
+	MsgTypeAircraft        MessageType = 11 // AIR messages
+	MsgTypeID              MessageType = 12 // ID messages
 )
 
 // ParseMessage parses a raw SBS message into an aircraft state
 func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error) {
 	// Split message into fields
 	fields := strings.Split(strings.TrimSpace(raw), ",")
-	if len(fields) < 22 {
-		return nil, fmt.Errorf("invalid message format: expected at least 22 fields, got %d", len(fields))
+
+	// Check message type prefix
+	var msgTypeIndex int
+	var messageType string
+
+	if len(fields) > 0 {
+		messageType = fields[0]
 	}
 
-	// Check if message starts with "MSG" (SBS format)
-	msgTypeIndex := 0
-	if len(fields) > 0 && fields[0] == "MSG" {
-		// SBS format: MSG,type,transmission_type,session_id,aircraft_id,hex_ident,flight_id,...
+	switch messageType {
+	case "MSG":
+		// Standard SBS format: MSG,type,transmission_type,session_id,aircraft_id,hex_ident,flight_id,...
 		if len(fields) < 22 {
-			return nil, fmt.Errorf("invalid SBS message format: expected at least 22 fields, got %d", len(fields))
+			return nil, fmt.Errorf("invalid SBS message format: expected at least 22 fields, got %d (raw: %q)", len(fields), raw)
 		}
 		msgTypeIndex = 1 // Message type is at index 1 after "MSG"
+
+	case "STA", "AIR", "ID":
+		// Status/Aircraft/ID format: TYPE,,transmission_type,session_id,aircraft_id,hex_ident,flight_id,...
+		if len(fields) < 10 {
+			return nil, fmt.Errorf("invalid %s message format: expected at least 10 fields, got %d (raw: %q)", messageType, len(fields), raw)
+		}
+		// For these message types, we'll treat them as status messages
+		// and extract basic info without requiring full SBS format
+		state := &types.AircraftState{
+			MsgType:   getMessageTypeFromPrefix(messageType),
+			Timestamp: timestamp,
+		}
+
+		// Extract hex identifier if available
+		if len(fields) > 4 {
+			state.HexIdent = fields[4]
+		}
+
+		// Extract callsign if available
+		if len(fields) > 9 {
+			state.Callsign = fields[9]
+		}
+
+		return state, nil
+
+	default:
+		return nil, fmt.Errorf("unknown message type prefix: %s (raw: %q)", messageType, raw)
 	}
 
 	// Parse message type
 	msgType, err := strconv.Atoi(fields[msgTypeIndex])
 	if err != nil {
-		return nil, fmt.Errorf("invalid message type: %w", err)
+		return nil, fmt.Errorf("invalid message type: %w (field value: %q)", err, fields[msgTypeIndex])
 	}
 
 	// Create state
@@ -96,8 +130,16 @@ func parseMessageFields(state *types.AircraftState, fields []string, msgTypeInde
 	case MsgTypeNewGround:
 		parseOnGround(state, fields, msgTypeIndex)
 
+	case MsgTypeStatus, MsgTypeAircraft, MsgTypeID:
+		// These are status/info messages that don't contain state information
+		// but we can extract some basic info if available
+		if len(fields) > 10+msgTypeIndex {
+			state.Callsign = fields[10+msgTypeIndex]
+		}
+		return nil
+
 	default:
-		return fmt.Errorf("unknown message type: %d", state.MsgType)
+		return fmt.Errorf("unknown message type: %d (raw message: %q)", state.MsgType, strings.Join(fields, ","))
 	}
 
 	return nil
@@ -151,5 +193,19 @@ func parseOnGround(state *types.AircraftState, fields []string, msgTypeIndex int
 		if onGround, err := strconv.Atoi(fields[21+msgTypeIndex]); err == nil {
 			state.OnGround = onGround == 1
 		}
+	}
+}
+
+// getMessageTypeFromPrefix converts message prefix to message type
+func getMessageTypeFromPrefix(prefix string) int {
+	switch prefix {
+	case "STA":
+		return int(MsgTypeStatus)
+	case "AIR":
+		return int(MsgTypeAircraft)
+	case "ID":
+		return int(MsgTypeID)
+	default:
+		return 0
 	}
 }

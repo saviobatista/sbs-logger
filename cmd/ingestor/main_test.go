@@ -246,7 +246,7 @@ func TestConnectAndIngest(t *testing.T) {
 			name: "successful connect and ingest",
 			setupServer: func() (net.Listener, error) {
 				return createMockTCPServer([]string{
-					"MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0\n",
+					"MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0\r\n",
 				})
 			},
 			setupMockNATS: func() *mockNATSClient {

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"testing"
 
+	_ "github.com/lib/pq"
+	"github.com/saviobatista/sbs-logger/internal/testutils"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/modules/redis"
@@ -30,6 +32,11 @@ func setupTestContainers(t *testing.T) *testContainers {
 	)
 	if err != nil {
 		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+	}
+
+	// Wait for PostgreSQL to be fully ready for DDL operations
+	if err := testutils.WaitForPostgresReady(ctx, postgresContainer); err != nil {
+		t.Fatalf("PostgreSQL container not ready for DDL operations: %v", err)
 	}
 
 	// Start Redis container
