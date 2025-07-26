@@ -16,28 +16,26 @@ import (
 )
 
 func main() {
-	// Load configuration
-	outputDir := os.Getenv("OUTPUT_DIR")
-	if outputDir == "" {
-		outputDir = "./logs" // Default output directory
+	if err := runLogger(); err != nil {
+		log.Printf("Logger failed: %v", err)
+		os.Exit(1)
 	}
+}
 
-	natsURL := os.Getenv("NATS_URL")
-	if natsURL == "" {
-		natsURL = "nats://nats:4222" // Default to Docker service name
-	}
+// runLogger contains the main application logic and can be tested
+func runLogger() error {
+	// Load configuration
+	outputDir, natsURL := parseEnvironment()
 
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0o750); err != nil {
-		log.Printf("Failed to create output directory: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	// Create NATS client
 	client, err := nats.New(natsURL)
 	if err != nil {
-		log.Printf("Failed to create NATS client: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create NATS client: %w", err)
 	}
 	// Note: client.Close() will be called in the shutdown handler
 
@@ -55,8 +53,9 @@ func main() {
 			log.Printf("Failed to write message: %v", err)
 		}
 	}); err != nil {
-		log.Printf("Failed to subscribe to SBS messages: %v", err)
-		os.Exit(1)
+		client.Close()
+		cancel()
+		return fmt.Errorf("failed to subscribe to SBS messages: %w", err)
 	}
 
 	// Wait for shutdown signal
@@ -68,6 +67,23 @@ func main() {
 	client.Close()          // Close client before canceling context
 	cancel()                // Cancel context after closing client
 	time.Sleep(time.Second) // Give time for goroutines to clean up
+
+	return nil
+}
+
+// parseEnvironment extracts environment variables with defaults
+func parseEnvironment() (string, string) {
+	outputDir := os.Getenv("OUTPUT_DIR")
+	if outputDir == "" {
+		outputDir = "./logs" // Default output directory
+	}
+
+	natsURL := os.Getenv("NATS_URL")
+	if natsURL == "" {
+		natsURL = "nats://nats:4222" // Default to Docker service name
+	}
+
+	return outputDir, natsURL
 }
 
 // Logger handles writing messages to log files

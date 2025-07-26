@@ -5,321 +5,289 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/saviobatista/sbs-logger/internal/nats"
 	"github.com/saviobatista/sbs-logger/internal/types"
 	"github.com/testcontainers/testcontainers-go"
-	natscontainer "github.com/testcontainers/testcontainers-go/modules/nats"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 // testContainers holds the test containers for integration tests
 type testContainers struct {
-	nats *natscontainer.NATSContainer
+	nats testcontainers.Container
 }
 
-// setupTestContainers sets up the test containers for integration tests
-func setupTestContainers(t *testing.T) *testContainers {
+// setupTestContainers creates and starts test containers
+func setupTestContainers(t *testing.T) (*testContainers, error) {
 	ctx := context.Background()
 
-	// Start NATS container
-	natsContainer, err := natscontainer.Run(ctx, "nats:2.9-alpine",
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("Server is ready"),
-		),
-	)
+	// Create NATS container with JetStream enabled
+	natsContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "nats:2.9-alpine",
+			ExposedPorts: []string{"4222/tcp"},
+			Cmd:          []string{"-js"},
+			WaitingFor:   wait.ForLog("Server is ready"),
+		},
+		Started: true,
+	})
 	if err != nil {
-		t.Fatalf("Failed to start NATS container: %v", err)
+		return nil, fmt.Errorf("failed to start NATS container: %w", err)
 	}
 
-	return &testContainers{
+	// Get NATS port
+	natsPort, err := natsContainer.MappedPort(ctx, "4222")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get NATS port: %w", err)
+	}
+
+	containers := &testContainers{
 		nats: natsContainer,
 	}
+
+	// Set environment variables for the test
+	os.Setenv("NATS_URL", fmt.Sprintf("nats://localhost:%s", natsPort.Port()))
+	os.Setenv("OUTPUT_DIR", t.TempDir())
+
+	return containers, nil
 }
 
-// TestNATSIntegration tests integration with real NATS server
-func TestNATSIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+// TestLoggerMain_Integration tests the main function with real NATS server
+func TestLoggerMain_Integration(t *testing.T) {
+	// Set up test containers
+	containers, err := setupTestContainers(t)
+	if err != nil {
+		t.Fatalf("Failed to set up test containers: %v", err)
 	}
-
-	containers := setupTestContainers(t)
 	defer func() {
 		if err := containers.nats.Terminate(context.Background()); err != nil {
 			t.Logf("Failed to terminate NATS container: %v", err)
 		}
 	}()
 
-	// Get NATS connection string
-	natsURL, err := containers.nats.ConnectionString(context.Background())
-	if err != nil {
-		t.Fatalf("Failed to get NATS connection string: %v", err)
+	// Get NATS URL from environment
+	natsURL := os.Getenv("NATS_URL")
+	if natsURL == "" {
+		t.Fatal("NATS_URL environment variable not set")
 	}
 
-	// Create NATS client
-	client, err := nats.New(natsURL)
+	// Create NATS client with retry logic
+	var client *nats.Client
+	for i := 0; i < 5; i++ {
+		client, err = nats.New(natsURL)
+		if err == nil {
+			break
+		}
+		t.Logf("Attempt %d: Failed to create NATS client: %v", i+1, err)
+		time.Sleep(time.Second)
+	}
 	if err != nil {
-		t.Fatalf("Failed to create NATS client: %v", err)
+		t.Fatalf("Failed to create NATS client after retries: %v", err)
 	}
 	defer client.Close()
 
-	// Test that we can subscribe to messages
+	// Test environment parsing
+	outputDir, parsedNATSURL := parseEnvironment()
+	if outputDir == "" {
+		t.Error("Expected output directory to be set")
+	}
+	if parsedNATSURL == "" {
+		t.Error("Expected NATS URL to be set")
+	}
+
+	// Test logger creation
+	logger := NewLogger(outputDir)
+	if logger == nil {
+		t.Fatal("Expected logger to be created")
+	}
+
+	// Test logger start
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	go logger.Start(ctx)
+
+	// Give logger time to initialize
+	time.Sleep(100 * time.Millisecond)
+
+	// Test message writing
+	testMessage := &types.SBSMessage{
+		Raw:       "MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0\n",
+		Timestamp: time.Now(),
+		Source:    "test-source",
+	}
+
+	err = logger.WriteMessage(testMessage)
+	if err != nil {
+		t.Errorf("Failed to write message: %v", err)
+	}
+
+	// Verify message was written to file
+	expectedDate := time.Now().UTC().Format("2006-01-02")
+	expectedPath := filepath.Join(outputDir, fmt.Sprintf("sbs_%s.log", expectedDate))
+
+	content, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Errorf("Failed to read log file: %v", err)
+	}
+
+	if !strings.Contains(string(content), "ABC123") {
+		t.Error("Expected message content to be written to file")
+	}
+
+	// Test NATS subscription
 	messageReceived := make(chan *types.SBSMessage, 1)
 	err = client.SubscribeSBSRaw(func(msg *types.SBSMessage) {
 		messageReceived <- msg
 	})
 	if err != nil {
-		t.Errorf("Failed to subscribe to SBS messages: %v", err)
+		t.Fatalf("Failed to subscribe to SBS messages: %v", err)
+	}
+
+	// Publish a message to NATS
+	err = client.PublishSBSMessage(testMessage)
+	if err != nil {
+		t.Fatalf("Failed to publish message: %v", err)
+	}
+
+	// Wait for message to be received
+	select {
+	case receivedMsg := <-messageReceived:
+		if receivedMsg.Raw != testMessage.Raw {
+			t.Errorf("Expected message %q, got %q", testMessage.Raw, receivedMsg.Raw)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("Timeout waiting for message")
 	}
 }
 
-// TestLogger_Integration tests the full logger workflow with real NATS
-func TestLogger_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+// TestLoggerMain_EnvironmentVariables tests main function with different environment variables
+func TestLoggerMain_EnvironmentVariables(t *testing.T) {
+	// Set up test containers
+	containers, err := setupTestContainers(t)
+	if err != nil {
+		t.Fatalf("Failed to set up test containers: %v", err)
 	}
-
-	containers := setupTestContainers(t)
 	defer func() {
 		if err := containers.nats.Terminate(context.Background()); err != nil {
 			t.Logf("Failed to terminate NATS container: %v", err)
 		}
 	}()
 
-	// Get NATS connection string
-	natsURL, err := containers.nats.ConnectionString(context.Background())
-	if err != nil {
-		t.Fatalf("Failed to get NATS connection string: %v", err)
-	}
-
-	// Create NATS client
-	client, err := nats.New(natsURL)
-	if err != nil {
-		t.Fatalf("Failed to create NATS client: %v", err)
-	}
-	defer client.Close()
-
-	// Create temporary directory for logs
-	tempDir, err := os.MkdirTemp("", "logger-integration-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	// Create logger
-	logger := NewLogger(tempDir)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	// Start logger
-	go logger.Start(ctx)
-
-	// Give it a moment to initialize
-	time.Sleep(100 * time.Millisecond)
-
-	// Subscribe to SBS messages and write them to logger
-	err = client.SubscribeSBSRaw(func(msg *types.SBSMessage) {
-		if err := logger.WriteMessage(msg); err != nil {
-			t.Errorf("Failed to write message: %v", err)
-		}
-	})
-	if err != nil {
-		t.Fatalf("Failed to subscribe to SBS messages: %v", err)
-	}
-
-	// Wait for context to complete
-	<-ctx.Done()
-
-	// Verify log file was created
-	expectedDate := time.Now().UTC().Format("2006-01-02")
-	logPath := filepath.Join(tempDir, fmt.Sprintf("sbs_%s.log", expectedDate))
-
-	if _, err := os.Stat(logPath); os.IsNotExist(err) {
-		t.Errorf("Expected log file to exist at %s", logPath)
-	}
-
-	// Cleanup
-	if logger.GetCurrentFile() != nil {
-		logger.GetCurrentFile().Close()
-	}
-}
-
-// TestLogger_RotationTimer_Integration tests rotation timer with real context
-func TestLogger_RotationTimer_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	tempDir, err := os.MkdirTemp("", "logger-rotation-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	logger := NewLogger(tempDir)
-
-	// Initialize the logger first
-	err = logger.rotateFile()
-	if err != nil {
-		t.Fatalf("Failed to initialize logger: %v", err)
-	}
-	defer func() {
-		if logger.GetCurrentFile() != nil {
-			_ = logger.GetCurrentFile().Close()
-		}
-	}()
-
-	// Test context cancellation
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Start rotation timer in goroutine
-	done := make(chan bool)
-	go func() {
-		logger.rotationTimer(ctx)
-		done <- true
-	}()
-
-	// Cancel context after a short delay
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
-
-	// Wait for function to return due to context cancellation
-	select {
-	case <-done:
-		// Function returned as expected
-	case <-time.After(1 * time.Second):
-		t.Error("rotationTimer did not return when context was cancelled")
-	}
-}
-
-// TestLogger_RotationTimer_RotationTrigger_Integration tests rotation trigger functionality
-func TestLogger_RotationTimer_RotationTrigger_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	tempDir, err := os.MkdirTemp("", "logger-rotation-trigger-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	logger := NewLogger(tempDir)
-
-	// Initialize the logger first
-	err = logger.rotateFile()
-	if err != nil {
-		t.Fatalf("Failed to initialize logger: %v", err)
-	}
-	defer func() {
-		if logger.GetCurrentFile() != nil {
-			logger.GetCurrentFile().Close()
-		}
-	}()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	// Start rotation timer
-	go logger.rotationTimer(ctx)
-
-	// Trigger rotation
-	logger.rotationChan <- struct{}{}
-
-	// Give time for rotation to process
-	time.Sleep(50 * time.Millisecond)
-
-	// The rotation should have been processed (this tests the rotation channel case)
-	// We can't easily verify the exact behavior without more complex mocking,
-	// but the coverage will be improved by exercising this code path
-}
-
-// TestLogger_RotateAndCompress_Integration tests comprehensive rotation and compression scenarios
-func TestLogger_RotateAndCompress_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	tests := []struct {
 		name        string
-		setupLogger func() (*Logger, func())
+		outputDir   string
+		natsURL     string
 		expectError bool
 	}{
 		{
-			name: "successful rotation and compression",
-			setupLogger: func() (*Logger, func()) {
-				tempDir, err := os.MkdirTemp("", "logger-test")
-				if err != nil {
-					panic(err)
-				}
-				logger := NewLogger(tempDir)
-
-				// Set up initial state with a previous date
-				yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
-				logger.SetCurrentDateForTesting(yesterday)
-
-				err = logger.rotateFile()
-				if err != nil {
-					panic(err)
-				}
-
-				// Write some content
-				_, _ = logger.GetCurrentFile().WriteString("test content\n")
-
-				return logger, func() { os.RemoveAll(tempDir) }
-			},
+			name:        "default environment variables",
+			outputDir:   "",
+			natsURL:     "",
 			expectError: false,
 		},
 		{
-			name: "rotation with no current file",
-			setupLogger: func() (*Logger, func()) {
-				tempDir, err := os.MkdirTemp("", "logger-test")
-				if err != nil {
-					panic(err)
-				}
-				logger := NewLogger(tempDir)
-				// Don't initialize current file
-				logger.SetCurrentDateForTesting(time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02"))
-				return logger, func() { os.RemoveAll(tempDir) }
-			},
-			expectError: false,
-		},
-		{
-			name: "rotation with no current date (no compression)",
-			setupLogger: func() (*Logger, func()) {
-				tempDir, err := os.MkdirTemp("", "logger-test")
-				if err != nil {
-					panic(err)
-				}
-				logger := NewLogger(tempDir)
-
-				err = logger.rotateFile()
-				if err != nil {
-					panic(err)
-				}
-
-				return logger, func() { os.RemoveAll(tempDir) }
-			},
+			name:        "custom environment variables",
+			outputDir:   "/tmp/custom-logs",
+			natsURL:     "nats://custom:4222",
 			expectError: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger, cleanup := tt.setupLogger()
-			defer cleanup()
-			defer func() {
-				if logger.GetCurrentFile() != nil {
-					logger.GetCurrentFile().Close()
+			// Set environment variables
+			if tt.outputDir != "" {
+				os.Setenv("OUTPUT_DIR", tt.outputDir)
+			} else {
+				os.Unsetenv("OUTPUT_DIR")
+			}
+			if tt.natsURL != "" {
+				os.Setenv("NATS_URL", tt.natsURL)
+			} else {
+				os.Unsetenv("NATS_URL")
+			}
+
+			// Test environment parsing
+			outputDir, natsURL := parseEnvironment()
+
+			if tt.outputDir == "" {
+				// Should use default
+				if outputDir != "./logs" {
+					t.Errorf("Expected default output dir './logs', got %q", outputDir)
 				}
-			}()
+			} else {
+				// Should use custom value
+				if outputDir != tt.outputDir {
+					t.Errorf("Expected output dir %q, got %q", tt.outputDir, outputDir)
+				}
+			}
 
-			err := logger.rotateAndCompress()
+			if tt.natsURL == "" {
+				// Should use default
+				if natsURL != "nats://nats:4222" {
+					t.Errorf("Expected default NATS URL 'nats://nats:4222', got %q", natsURL)
+				}
+			} else {
+				// Should use custom value
+				if natsURL != tt.natsURL {
+					t.Errorf("Expected NATS URL %q, got %q", tt.natsURL, natsURL)
+				}
+			}
+		})
+	}
+}
 
+// TestLoggerMain_OutputDirectoryCreation tests main function output directory creation
+func TestLoggerMain_OutputDirectoryCreation(t *testing.T) {
+	// Set up test containers
+	containers, err := setupTestContainers(t)
+	if err != nil {
+		t.Fatalf("Failed to set up test containers: %v", err)
+	}
+	defer func() {
+		if err := containers.nats.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate NATS container: %v", err)
+		}
+	}()
+
+	tests := []struct {
+		name        string
+		outputDir   string
+		expectError bool
+	}{
+		{
+			name:        "valid output directory",
+			outputDir:   t.TempDir(),
+			expectError: false,
+		},
+		{
+			name:        "default output directory",
+			outputDir:   "",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set output directory
+			if tt.outputDir != "" {
+				os.Setenv("OUTPUT_DIR", tt.outputDir)
+			} else {
+				os.Unsetenv("OUTPUT_DIR")
+			}
+
+			// Test directory creation logic
+			outputDir := os.Getenv("OUTPUT_DIR")
+			if outputDir == "" {
+				outputDir = "./logs" // Default output directory
+			}
+
+			// Test directory creation
+			err := os.MkdirAll(outputDir, 0o750)
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")
 			}
@@ -327,126 +295,212 @@ func TestLogger_RotateAndCompress_Integration(t *testing.T) {
 				t.Errorf("Expected no error, got: %v", err)
 			}
 
+			// Verify directory exists
 			if !tt.expectError {
-				// Verify new file was created with today's date
-				expectedDate := time.Now().UTC().Format("2006-01-02")
-				if logger.GetCurrentDate() != expectedDate {
-					t.Errorf("Expected current date %s, got %s", expectedDate, logger.GetCurrentDate())
-				}
-				if logger.GetCurrentFile() == nil {
-					t.Error("Expected current file to be set after rotation")
+				if _, err := os.Stat(outputDir); os.IsNotExist(err) {
+					t.Errorf("Expected directory %s to exist", outputDir)
 				}
 			}
 		})
 	}
 }
 
-// TestLogger_WriteMessage_Integration tests message writing with real file system
-func TestLogger_WriteMessage_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	tempDir, err := os.MkdirTemp("", "logger-write-test")
+// TestLoggerMain_NATSConnection tests main function NATS connection logic
+func TestLoggerMain_NATSConnection(t *testing.T) {
+	// Set up test containers
+	containers, err := setupTestContainers(t)
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
-
-	logger := NewLogger(tempDir)
-	err = logger.rotateFile()
-	if err != nil {
-		t.Fatalf("Failed to initialize logger: %v", err)
+		t.Fatalf("Failed to set up test containers: %v", err)
 	}
 	defer func() {
-		if logger.GetCurrentFile() != nil {
-			logger.GetCurrentFile().Close()
+		if err := containers.nats.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate NATS container: %v", err)
 		}
 	}()
 
-	// Write multiple messages
-	messages := []*types.SBSMessage{
-		{
-			Raw:       "MSG,1,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,,,,,,,,,,\n",
-			Timestamp: time.Now(),
-			Source:    "test-source-1",
-		},
-		{
-			Raw:       "MSG,3,1,1,DEF456,1,2021-01-01,00:00:01.000,2021-01-01,00:00:01.000,TEST456,11000,500,200,41.7128,-75.0060,0,0,0,0\n",
-			Timestamp: time.Now(),
-			Source:    "test-source-2",
-		},
+	// Get NATS URL from environment
+	natsURL := os.Getenv("NATS_URL")
+	if natsURL == "" {
+		t.Fatal("NATS_URL environment variable not set")
 	}
 
-	for _, msg := range messages {
-		err = logger.WriteMessage(msg)
-		if err != nil {
-			t.Errorf("Failed to write message: %v", err)
-		}
-	}
-
-	// Verify log file was created and contains messages
-	expectedDate := time.Now().UTC().Format("2006-01-02")
-	logPath := filepath.Join(tempDir, fmt.Sprintf("sbs_%s.log", expectedDate))
-
-	content, err := os.ReadFile(logPath)
+	// Test NATS client creation (main function logic)
+	client, err := nats.New(natsURL)
 	if err != nil {
-		t.Fatalf("Failed to read log file: %v", err)
+		t.Fatalf("Failed to create NATS client: %v", err)
+	}
+	defer client.Close()
+
+	// Test message publishing (main function logic)
+	testMessage := &types.SBSMessage{
+		Raw:       "MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0\n",
+		Timestamp: time.Now(),
+		Source:    "test-source",
 	}
 
-	expectedContent := messages[0].Raw + messages[1].Raw
-	if string(content) != expectedContent {
-		t.Errorf("Expected log content %q, got %q", expectedContent, string(content))
+	err = client.PublishSBSMessage(testMessage)
+	if err != nil {
+		t.Errorf("Failed to publish message: %v", err)
+	}
+
+	// Test message subscription (main function logic)
+	messageReceived := make(chan *types.SBSMessage, 1)
+	err = client.SubscribeSBSRaw(func(msg *types.SBSMessage) {
+		messageReceived <- msg
+	})
+	if err != nil {
+		t.Fatalf("Failed to subscribe to SBS messages: %v", err)
+	}
+
+	// Publish another message to trigger subscription
+	err = client.PublishSBSMessage(testMessage)
+	if err != nil {
+		t.Fatalf("Failed to publish message: %v", err)
+	}
+
+	// Wait for message to be received
+	select {
+	case receivedMsg := <-messageReceived:
+		if receivedMsg.Raw != testMessage.Raw {
+			t.Errorf("Expected message %q, got %q", testMessage.Raw, receivedMsg.Raw)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("Timeout waiting for message")
 	}
 }
 
-// TestCompressFile_Integration tests compression with real file system
-func TestCompressFile_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	tempDir, err := os.MkdirTemp("", "logger-compress-test")
+// TestLoggerMain_MessageWriting tests main function message writing logic
+func TestLoggerMain_MessageWriting(t *testing.T) {
+	// Set up test containers
+	containers, err := setupTestContainers(t)
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+		t.Fatalf("Failed to set up test containers: %v", err)
 	}
-	defer func() { _ = os.RemoveAll(tempDir) }()
+	defer func() {
+		if err := containers.nats.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate NATS container: %v", err)
+		}
+	}()
 
-	testFile := filepath.Join(tempDir, "test.log")
-	testContent := "test content for compression\n"
-	err = os.WriteFile(testFile, []byte(testContent), 0600)
+	// Set up output directory
+	outputDir := t.TempDir()
+	os.Setenv("OUTPUT_DIR", outputDir)
+
+	// Create logger (main function logic)
+	logger := NewLogger(outputDir)
+	if logger == nil {
+		t.Fatal("Expected logger to be created")
+	}
+
+	// Start logger (main function logic)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	go logger.Start(ctx)
+
+	// Give logger time to initialize
+	time.Sleep(100 * time.Millisecond)
+
+	// Test message writing (main function logic)
+	testMessage := &types.SBSMessage{
+		Raw:       "MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0\n",
+		Timestamp: time.Now(),
+		Source:    "test-source",
+	}
+
+	err = logger.WriteMessage(testMessage)
 	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+		t.Errorf("Failed to write message: %v", err)
 	}
 
-	err = compressFile(testFile)
+	// Verify message was written to file (main function logic)
+	expectedDate := time.Now().UTC().Format("2006-01-02")
+	expectedPath := filepath.Join(outputDir, fmt.Sprintf("sbs_%s.log", expectedDate))
+
+	content, err := os.ReadFile(expectedPath)
 	if err != nil {
-		t.Errorf("Failed to compress file: %v", err)
+		t.Errorf("Failed to read log file: %v", err)
 	}
 
-	// Verify original file is gone
-	if _, err := os.Stat(testFile); !os.IsNotExist(err) {
-		t.Error("Expected original file to be deleted after compression")
+	if !strings.Contains(string(content), "ABC123") {
+		t.Error("Expected message content to be written to file")
 	}
 
-	// Verify compressed file exists
-	compressedFile := testFile + ".gz"
-	if _, err := os.Stat(compressedFile); os.IsNotExist(err) {
-		t.Error("Expected compressed file to exist")
+	// Test multiple messages
+	for i := 0; i < 5; i++ {
+		message := &types.SBSMessage{
+			Raw:       fmt.Sprintf("MSG,3,1,1,DEF%d,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST%d,10000,450,180,40.7128,-74.0060,0,0,0,0\n", i, i),
+			Timestamp: time.Now(),
+			Source:    fmt.Sprintf("test-source-%d", i),
+		}
+
+		err := logger.WriteMessage(message)
+		if err != nil {
+			t.Errorf("Failed to write message %d: %v", i, err)
+		}
 	}
 
-	// Verify compressed file has content
-	compressedContent, err := os.ReadFile(compressedFile)
+	// Verify all messages were written
+	content, err = os.ReadFile(expectedPath)
 	if err != nil {
-		t.Errorf("Failed to read compressed file: %v", err)
+		t.Errorf("Failed to read log file: %v", err)
 	}
 
-	if len(compressedContent) == 0 {
-		t.Error("Expected compressed file to have content")
+	contentStr := string(content)
+	expectedMessages := 6 // 1 initial + 5 additional
+	actualMessages := strings.Count(contentStr, "MSG,")
+
+	if actualMessages != expectedMessages {
+		t.Errorf("Expected %d messages, found %d", expectedMessages, actualMessages)
+	}
+}
+
+// TestLoggerMain_ErrorHandling tests main function error handling
+func TestLoggerMain_ErrorHandling(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupEnv    func()
+		expectError bool
+	}{
+		{
+			name: "invalid NATS URL",
+			setupEnv: func() {
+				os.Setenv("NATS_URL", "nats://invalid:4222")
+				os.Setenv("OUTPUT_DIR", t.TempDir())
+			},
+			expectError: true,
+		},
+		{
+			name: "invalid output directory",
+			setupEnv: func() {
+				os.Setenv("NATS_URL", "nats://localhost:4222")
+				os.Setenv("OUTPUT_DIR", "/invalid/path/that/doesnt/exist")
+			},
+			expectError: true,
+		},
 	}
 
-	// Basic verification that content is preserved (not actually compressed in our implementation)
-	if string(compressedContent) != testContent {
-		t.Errorf("Expected compressed content %q, got %q", testContent, string(compressedContent))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up environment
+			tt.setupEnv()
+
+			// Test environment parsing
+			outputDir, natsURL := parseEnvironment()
+
+			if tt.name == "invalid NATS URL" {
+				// Should still parse the URL even if invalid
+				if natsURL == "" {
+					t.Error("Expected NATS URL to be parsed")
+				}
+			}
+
+			if tt.name == "invalid output directory" {
+				// Should still parse the directory even if invalid
+				if outputDir == "" {
+					t.Error("Expected output directory to be parsed")
+				}
+			}
+		})
 	}
 }

@@ -443,19 +443,164 @@ func TestLogger_ErrorScenarios(t *testing.T) {
 	})
 }
 
-// Helper functions
+// TestRunLogger tests the main application logic
+func TestRunLogger(t *testing.T) {
+	// Save original environment
+	originalOutputDir := os.Getenv("OUTPUT_DIR")
+	originalNATSURL := os.Getenv("NATS_URL")
+	defer func() {
+		os.Setenv("OUTPUT_DIR", originalOutputDir)
+		os.Setenv("NATS_URL", originalNATSURL)
+	}()
 
-// parseEnvironment extracts the core environment parsing logic for testing
-func parseEnvironment() (string, string) {
-	outputDir := os.Getenv("OUTPUT_DIR")
-	if outputDir == "" {
-		outputDir = "./logs" // Default output directory
+	tests := []struct {
+		name          string
+		outputDir     string
+		natsURL       string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "invalid output directory",
+			outputDir:     "/invalid/path/that/doesnt/exist",
+			natsURL:       "",
+			expectError:   true,
+			errorContains: "failed to create output directory",
+		},
+		{
+			name:          "invalid NATS URL",
+			outputDir:     "/tmp/test-logs",
+			natsURL:       "invalid://url",
+			expectError:   true,
+			errorContains: "failed to create NATS client",
+		},
 	}
 
-	natsURL := os.Getenv("NATS_URL")
-	if natsURL == "" {
-		natsURL = "nats://nats:4222" // Default to Docker service name
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variables
+			os.Setenv("OUTPUT_DIR", tt.outputDir)
+			os.Setenv("NATS_URL", tt.natsURL)
 
-	return outputDir, natsURL
+			// Create a temporary directory for valid tests
+			if tt.outputDir == "/tmp/test-logs" {
+				tempDir, err := os.MkdirTemp("", "logger-test")
+				if err != nil {
+					t.Fatalf("Failed to create temp dir: %v", err)
+				}
+				defer os.RemoveAll(tempDir)
+				os.Setenv("OUTPUT_DIR", tempDir)
+			}
+
+			// Run the logger
+			err := runLogger()
+
+			if tt.expectError && err == nil {
+				t.Error("Expected error, got none")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Expected no error, got: %v", err)
+			}
+			if tt.expectError && tt.errorContains != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("Expected error containing %q, got: %v", tt.errorContains, err)
+				}
+			}
+		})
+	}
 }
+
+// TestRunLogger_Integration tests the logger with a real NATS server
+func TestRunLogger_Integration(t *testing.T) {
+	// This test requires a NATS server to be running
+	// For now, we'll test the error case when NATS is not available
+	t.Run("NATS server not available", func(t *testing.T) {
+		// Save original environment
+		originalOutputDir := os.Getenv("OUTPUT_DIR")
+		originalNATSURL := os.Getenv("NATS_URL")
+		defer func() {
+			os.Setenv("OUTPUT_DIR", originalOutputDir)
+			os.Setenv("NATS_URL", originalNATSURL)
+		}()
+
+		// Set up test environment
+		tempDir, err := os.MkdirTemp("", "logger-test")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tempDir)
+
+		os.Setenv("OUTPUT_DIR", tempDir)
+		os.Setenv("NATS_URL", "nats://localhost:4222") // Use localhost which should not be available
+
+		// Run the logger
+		err = runLogger()
+		if err == nil {
+			t.Error("Expected error when NATS server is not available")
+		}
+		if !strings.Contains(err.Error(), "failed to create NATS client") {
+			t.Errorf("Expected NATS client error, got: %v", err)
+		}
+	})
+}
+
+// TestParseEnvironment_Integration tests the environment parsing function
+func TestParseEnvironment_Integration(t *testing.T) {
+	// Save original environment
+	originalOutputDir := os.Getenv("OUTPUT_DIR")
+	originalNATSURL := os.Getenv("NATS_URL")
+	defer func() {
+		os.Setenv("OUTPUT_DIR", originalOutputDir)
+		os.Setenv("NATS_URL", originalNATSURL)
+	}()
+
+	tests := []struct {
+		name              string
+		outputDir         string
+		natsURL           string
+		expectedOutputDir string
+		expectedNATSURL   string
+	}{
+		{
+			name:              "default values",
+			outputDir:         "",
+			natsURL:           "",
+			expectedOutputDir: "./logs",
+			expectedNATSURL:   "nats://nats:4222",
+		},
+		{
+			name:              "custom values",
+			outputDir:         "/tmp/custom-logs",
+			natsURL:           "nats://custom:4222",
+			expectedOutputDir: "/tmp/custom-logs",
+			expectedNATSURL:   "nats://custom:4222",
+		},
+		{
+			name:              "partial custom values",
+			outputDir:         "/tmp/partial-logs",
+			natsURL:           "",
+			expectedOutputDir: "/tmp/partial-logs",
+			expectedNATSURL:   "nats://nats:4222",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variables
+			os.Setenv("OUTPUT_DIR", tt.outputDir)
+			os.Setenv("NATS_URL", tt.natsURL)
+
+			outputDir, natsURL := parseEnvironment()
+
+			if outputDir != tt.expectedOutputDir {
+				t.Errorf("Expected output dir %q, got %q", tt.expectedOutputDir, outputDir)
+			}
+
+			if natsURL != tt.expectedNATSURL {
+				t.Errorf("Expected NATS URL %q, got %q", tt.expectedNATSURL, natsURL)
+			}
+		})
+	}
+}
+
+// Helper functions
