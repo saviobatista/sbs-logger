@@ -71,9 +71,6 @@ services:
   nats:
     image: nats:latest
     container_name: nats
-    command: ["--config", "/etc/nats/nats-server.conf"]
-    volumes:
-      - ./config/nats:/etc/nats
     restart: unless-stopped
 
   redis:
