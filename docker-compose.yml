@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ultrafeeder:
     image: ghcr.io/sdr-enthusiasts/docker-adsb-ultrafeeder:latest
@@ -72,6 +70,9 @@ services:
     image: nats:latest
     container_name: nats
     restart: unless-stopped
+    command: ["-js"]
+    volumes:
+      - nats_data:/data
 
   redis:
     image: redis:alpine
@@ -93,3 +94,4 @@ services:
 volumes:
   timescaledb_data:
   redis_data:
+  nats_data:
