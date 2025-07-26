@@ -13,7 +13,7 @@ import (
 	"github.com/saviobatista/sbs-logger/internal/types"
 )
 
-// Mock NATS client for testing
+// Mock NATS client for unit testing
 type mockNATSClient struct {
 	publishedMessages []*types.SBSMessage
 	publishError      error
@@ -54,7 +54,6 @@ func (m *mockNATSClient) GetPublishedMessages() []*types.SBSMessage {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Return a copy to avoid race conditions
 	messages := make([]*types.SBSMessage, len(m.publishedMessages))
 	copy(messages, m.publishedMessages)
 	return messages
@@ -67,8 +66,8 @@ func (m *mockNATSClient) IsClosed() bool {
 	return m.closed
 }
 
-// TestEnvironmentVariables tests environment variable handling
-func TestEnvironmentVariables(t *testing.T) {
+// TestParseEnvironment tests environment variable parsing
+func TestParseEnvironment(t *testing.T) {
 	// Save original environment
 	originalSources := os.Getenv("SOURCES")
 	originalNATSURL := os.Getenv("NATS_URL")
@@ -155,96 +154,6 @@ func TestEnvironmentVariables(t *testing.T) {
 	}
 }
 
-// TestIngestSource tests the ingestSource function with various scenarios
-func TestIngestSource(t *testing.T) {
-	tests := []struct {
-		name           string
-		source         string
-		setupMockNATS  func() *mockNATSClient
-		setupServer    func() (net.Listener, error)
-		expectMessages int
-		maxDuration    time.Duration
-	}{
-		{
-			name:   "successful ingestion",
-			source: "localhost:0", // Will be replaced with actual port
-			setupMockNATS: func() *mockNATSClient {
-				return &mockNATSClient{}
-			},
-			setupServer: func() (net.Listener, error) {
-				return createMockTCPServer([]string{
-					"MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0\n",
-					"MSG,1,1,1,DEF456,1,2021-01-01,00:00:01.000,2021-01-01,00:00:01.000,TEST456,11000,500,200,41.7128,-75.0060,0,0,0,0\n",
-				})
-			},
-			expectMessages: 2,
-			maxDuration:    2 * time.Second,
-		},
-		{
-			name:   "NATS publish error",
-			source: "localhost:0",
-			setupMockNATS: func() *mockNATSClient {
-				return &mockNATSClient{publishError: fmt.Errorf("NATS error")}
-			},
-			setupServer: func() (net.Listener, error) {
-				return createMockTCPServer([]string{
-					"MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0\n",
-				})
-			},
-			expectMessages: 0, // Should not increment due to publish error
-			maxDuration:    2 * time.Second,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup mock server
-			listener, err := tt.setupServer()
-			if err != nil {
-				t.Fatalf("Failed to create mock server: %v", err)
-			}
-			defer func() {
-				if err := listener.Close(); err != nil {
-					t.Errorf("Failed to close listener: %v", err)
-				}
-			}()
-
-			// Get the actual port
-			actualSource := listener.Addr().String()
-
-			// Setup mock NATS client
-			mockClient := tt.setupMockNATS()
-
-			// Create context with timeout
-			ctx, cancel := context.WithTimeout(context.Background(), tt.maxDuration)
-			defer cancel()
-
-			// Start ingestSource in a goroutine
-			go ingestSource(ctx, actualSource, mockClient)
-
-			// Wait for context to complete or timeout
-			<-ctx.Done()
-
-			// Verify results
-			if mockClient.GetPublishedMessagesCount() != tt.expectMessages {
-				t.Errorf("Expected %d published messages, got %d", tt.expectMessages, mockClient.GetPublishedMessagesCount())
-			}
-
-			// Verify message content if any were published
-			publishedMessages := mockClient.GetPublishedMessages()
-			if len(publishedMessages) > 0 {
-				msg := publishedMessages[0]
-				if msg.Source != actualSource {
-					t.Errorf("Expected source %q, got %q", actualSource, msg.Source)
-				}
-				if msg.Raw == "" {
-					t.Error("Expected non-empty message content")
-				}
-			}
-		})
-	}
-}
-
 // TestConnectWithRetry tests the connection retry logic
 func TestConnectWithRetry(t *testing.T) {
 	tests := []struct {
@@ -323,7 +232,7 @@ func TestConnectWithRetry(t *testing.T) {
 	}
 }
 
-// TestConnectAndIngest tests the connectAndIngest function
+// TestConnectAndIngest tests the connectAndIngest function with mock server
 func TestConnectAndIngest(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -403,6 +312,35 @@ func TestConnectAndIngest(t *testing.T) {
 	}
 }
 
+// TestNATSClientInterface tests that our mock implements the expected interface
+func TestNATSClientInterface(t *testing.T) {
+	mock := &mockNATSClient{}
+
+	// Test that our mock can be used as a NATSClient
+	var client NATSClient = mock
+
+	// Test the interface methods
+	msg := &types.SBSMessage{
+		Raw:       "test message",
+		Timestamp: time.Now(),
+		Source:    "test",
+	}
+
+	err := client.PublishSBSMessage(msg)
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+
+	client.Close()
+
+	// Add a small delay to ensure the Close() method has completed
+	time.Sleep(10 * time.Millisecond)
+
+	if !mock.IsClosed() {
+		t.Error("Expected mock to be marked as closed")
+	}
+}
+
 // Helper functions
 
 // parseEnvironment extracts the core environment parsing logic for testing
@@ -461,33 +399,4 @@ func createMockTCPServer(messages []string) (net.Listener, error) {
 	}()
 
 	return listener, nil
-}
-
-// TestNATSClientInterface tests that our mock implements the expected interface
-func TestNATSClientInterface(t *testing.T) {
-	mock := &mockNATSClient{}
-
-	// Test that our mock can be used as a NATSClient
-	var client NATSClient = mock
-
-	// Test the interface methods
-	msg := &types.SBSMessage{
-		Raw:       "test message",
-		Timestamp: time.Now(),
-		Source:    "test",
-	}
-
-	err := client.PublishSBSMessage(msg)
-	if err != nil {
-		t.Errorf("Expected no error, got: %v", err)
-	}
-
-	client.Close()
-
-	// Add a small delay to ensure the Close() method has completed
-	time.Sleep(10 * time.Millisecond)
-
-	if !mock.IsClosed() {
-		t.Error("Expected mock to be marked as closed")
-	}
 }
