@@ -25,8 +25,7 @@ func setupTestContainers(t *testing.T) *testContainers {
 	ctx := context.Background()
 
 	// Start NATS container
-	natsContainer, err := natscontainer.RunContainer(ctx,
-		testcontainers.WithImage("nats:2.9-alpine"),
+	natsContainer, err := natscontainer.Run(ctx, "nats:2.9-alpine",
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("Server is ready"),
 		),
@@ -48,7 +47,9 @@ func TestNATSIntegration(t *testing.T) {
 
 	containers := setupTestContainers(t)
 	defer func() {
-		containers.nats.Terminate(context.Background())
+		if err := containers.nats.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate NATS container: %v", err)
+		}
 	}()
 
 	// Get NATS connection string
@@ -82,7 +83,9 @@ func TestLogger_Integration(t *testing.T) {
 
 	containers := setupTestContainers(t)
 	defer func() {
-		containers.nats.Terminate(context.Background())
+		if err := containers.nats.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate NATS container: %v", err)
+		}
 	}()
 
 	// Get NATS connection string

@@ -20,8 +20,7 @@ func setupTestContainers(t *testing.T) *testContainers {
 	ctx := context.Background()
 
 	// Start PostgreSQL container
-	postgresContainer, err := postgres.RunContainer(ctx,
-		testcontainers.WithImage("postgres:14-alpine"),
+	postgresContainer, err := postgres.Run(ctx, "postgres:14-alpine",
 		postgres.WithDatabase("sbs_logger"),
 		postgres.WithUsername("postgres"),
 		postgres.WithPassword("postgres"),
@@ -34,8 +33,7 @@ func setupTestContainers(t *testing.T) *testContainers {
 	}
 
 	// Start Redis container
-	redisContainer, err := redis.RunContainer(ctx,
-		testcontainers.WithImage("redis:7-alpine"),
+	redisContainer, err := redis.Run(ctx, "redis:7-alpine",
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("Ready to accept connections"),
 		),
@@ -57,8 +55,12 @@ func TestContainerSetup_Integration(t *testing.T) {
 
 	containers := setupTestContainers(t)
 	defer func() {
-		containers.postgres.Terminate(context.Background())
-		containers.redis.Terminate(context.Background())
+		if err := containers.postgres.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate PostgreSQL container: %v", err)
+		}
+		if err := containers.redis.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate Redis container: %v", err)
+		}
 	}()
 
 	// Test that containers are accessible
@@ -88,8 +90,12 @@ func TestBasicDatabaseOperations_Integration(t *testing.T) {
 
 	containers := setupTestContainers(t)
 	defer func() {
-		containers.postgres.Terminate(context.Background())
-		containers.redis.Terminate(context.Background())
+		if err := containers.postgres.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate PostgreSQL container: %v", err)
+		}
+		if err := containers.redis.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate Redis container: %v", err)
+		}
 	}()
 
 	// Get database connection string
