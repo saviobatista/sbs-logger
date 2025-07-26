@@ -6,6 +6,7 @@ sbs-logger
 bin/
 coverage.out
 coverage.html
+*.out
 
 # IDE files
 .vscode/

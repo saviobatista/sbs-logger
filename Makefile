@@ -27,12 +27,25 @@ fmt: ## Format Go code
 lint: ## Run linter
 	golangci-lint run
 
-test: ## Run tests
+test: ## Run all tests (unit + integration)
 	go test -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
-test-short: ## Run tests without race detection
+test-short: ## Run all tests without race detection
 	go test -v ./...
+
+test-unit: ## Run unit tests only
+	go test -v -race -coverprofile=coverage.out ./internal/... ./cmd/ingestor ./cmd/logger
+	go tool cover -html=coverage.out -o coverage.html
+
+test-unit-short: ## Run unit tests without race detection
+	go test -v ./internal/... ./cmd/ingestor ./cmd/logger
+
+test-integration: ## Run integration tests only
+	go test -v -run "Test.*Integration" ./...
+
+test-integration-short: ## Run integration tests without race detection
+	go test -v -run "Test.*Integration" ./...
 
 # Building
 build: ## Build all binaries
