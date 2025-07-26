@@ -92,6 +92,7 @@ func connectAndIngest(ctx context.Context, source string, client NATSClient) err
 
 	// Create buffer for reading messages
 	buf := make([]byte, 1024)
+	var messageBuffer strings.Builder
 
 	for {
 		select {
@@ -103,22 +104,44 @@ func connectAndIngest(ctx context.Context, source string, client NATSClient) err
 				return fmt.Errorf("failed to set read deadline: %w", err)
 			}
 
-			// Read message
+			// Read data
 			n, err := conn.Read(buf)
 			if err != nil {
 				return fmt.Errorf("read error: %w", err)
 			}
 
-			// Create and publish message
-			msg := &types.SBSMessage{
-				Raw:       string(buf[:n]),
-				Timestamp: time.Now().UTC(),
-				Source:    source,
+			// Add to message buffer
+			messageBuffer.Write(buf[:n])
+
+			// Process complete messages (split by \r\n)
+			data := messageBuffer.String()
+			messages := strings.Split(data, "\r\n")
+
+			// Keep the last message in buffer (it might be incomplete)
+			messageBuffer.Reset()
+			if len(messages) > 1 {
+				// Process all complete messages except the last one
+				for i := 0; i < len(messages)-1; i++ {
+					message := strings.TrimSpace(messages[i])
+					if message != "" {
+						// Create and publish message
+						msg := &types.SBSMessage{
+							Raw:       message,
+							Timestamp: time.Now().UTC(),
+							Source:    source,
+						}
+
+						if err := client.PublishSBSMessage(msg); err != nil {
+							log.Printf("Failed to publish message: %v", err)
+							continue
+						}
+					}
+				}
 			}
 
-			if err := client.PublishSBSMessage(msg); err != nil {
-				log.Printf("Failed to publish message: %v", err)
-				continue
+			// Keep the last message in buffer (might be incomplete)
+			if len(messages) > 0 {
+				messageBuffer.WriteString(messages[len(messages)-1])
 			}
 		}
 	}
