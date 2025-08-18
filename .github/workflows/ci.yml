@@ -418,21 +418,21 @@ jobs:
           echo "Build job dependency satisfied"
 
       - name: Download ingestor artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         timeout-minutes: 5
         with:
           name: ingestor-binaries
           path: ingestor-binaries
 
       - name: Download logger artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         timeout-minutes: 5
         with:
           name: logger-binaries
           path: logger-binaries
 
       - name: Download tracker artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         timeout-minutes: 5
         with:
           name: tracker-binaries
