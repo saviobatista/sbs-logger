@@ -588,149 +588,6 @@ func TestClient_DeleteAircraftState_Unit(t *testing.T) {
 	}
 }
 
-func TestClient_SetFlightValidation_Unit(t *testing.T) {
-	tests := []struct {
-		name        string
-		hexIdent    string
-		valid       bool
-		setError    error
-		expectError bool
-	}{
-		{
-			name:        "set valid flight",
-			hexIdent:    "ABC123",
-			valid:       true,
-			setError:    nil,
-			expectError: false,
-		},
-		{
-			name:        "set invalid flight",
-			hexIdent:    "ABC123",
-			valid:       false,
-			setError:    nil,
-			expectError: false,
-		},
-		{
-			name:        "redis set error",
-			hexIdent:    "ABC123",
-			valid:       true,
-			setError:    errors.New("set failed"),
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockClient := &mockRedisClient{setError: tt.setError}
-			client := NewWithClient(mockClient)
-			ctx := context.Background()
-
-			err := client.SetFlightValidation(ctx, tt.hexIdent, tt.valid)
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error, got none")
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("Expected no error, got: %v", err)
-			}
-
-			// Verify correct value was stored
-			if !tt.expectError && err == nil {
-				key := "validation:" + tt.hexIdent
-				expectedValue := "0"
-				if tt.valid {
-					expectedValue = "1"
-				}
-				if value, exists := mockClient.data[key]; !exists {
-					t.Error("Expected validation data to be stored")
-				} else if value != expectedValue {
-					t.Errorf("Expected value %s, got %s", expectedValue, value)
-				}
-			}
-		})
-	}
-}
-
-func TestClient_GetFlightValidation_Unit(t *testing.T) {
-	tests := []struct {
-		name           string
-		hexIdent       string
-		storedData     map[string]string
-		getError       error
-		expectError    bool
-		expectedResult bool
-	}{
-		{
-			name:     "get valid flight",
-			hexIdent: "ABC123",
-			storedData: map[string]string{
-				"validation:ABC123": "1",
-			},
-			getError:       nil,
-			expectError:    false,
-			expectedResult: true,
-		},
-		{
-			name:     "get invalid flight",
-			hexIdent: "ABC123",
-			storedData: map[string]string{
-				"validation:ABC123": "0",
-			},
-			getError:       nil,
-			expectError:    false,
-			expectedResult: false,
-		},
-		{
-			name:           "validation not found",
-			hexIdent:       "NOTFOUND",
-			storedData:     map[string]string{},
-			getError:       nil,
-			expectError:    false,
-			expectedResult: false,
-		},
-		{
-			name:        "redis get error",
-			hexIdent:    "ABC123",
-			storedData:  map[string]string{},
-			getError:    errors.New("get failed"),
-			expectError: true,
-		},
-		{
-			name:     "invalid value from Redis",
-			hexIdent: "ABC123",
-			storedData: map[string]string{
-				"validation:ABC123": "invalid",
-			},
-			getError:       nil,
-			expectError:    false,
-			expectedResult: false, // Anything not "1" is false
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockClient := &mockRedisClient{
-				data:     tt.storedData,
-				getError: tt.getError,
-			}
-			client := NewWithClient(mockClient)
-			ctx := context.Background()
-
-			valid, err := client.GetFlightValidation(ctx, tt.hexIdent)
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error, got none")
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("Expected no error, got: %v", err)
-			}
-			if !tt.expectError && valid != tt.expectedResult {
-				t.Errorf("Expected %t, got %t", tt.expectedResult, valid)
-			}
-		})
-	}
-}
-
 func TestClient_GetData_Unit(t *testing.T) {
 	testData := map[string]interface{}{
 		"field1": "value1",
@@ -986,12 +843,6 @@ func TestClient_FullIntegration(t *testing.T) {
 		t.Fatalf("StoreAircraftState failed: %v", err)
 	}
 
-	// Set validation
-	err = client.SetFlightValidation(ctx, hexIdent, true)
-	if err != nil {
-		t.Fatalf("SetFlightValidation failed: %v", err)
-	}
-
 	// Retrieve and verify all data
 	retrievedFlight, err := client.GetFlight(ctx, hexIdent)
 	if err != nil {
@@ -1007,14 +858,6 @@ func TestClient_FullIntegration(t *testing.T) {
 	}
 	if retrievedState == nil || retrievedState.HexIdent != state.HexIdent {
 		t.Error("Aircraft state data mismatch")
-	}
-
-	valid, err := client.GetFlightValidation(ctx, hexIdent)
-	if err != nil {
-		t.Fatalf("GetFlightValidation failed: %v", err)
-	}
-	if !valid {
-		t.Error("Validation should be true")
 	}
 
 	// Clean up

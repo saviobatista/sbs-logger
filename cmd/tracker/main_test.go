@@ -55,18 +55,16 @@ func (m *mockDBClient) StoreAircraftState(state *types.AircraftState) error {
 func (m *mockDBClient) Close() error { return nil }
 
 type mockRedisClient struct {
-	flights          map[string]*types.Flight
-	aircraftStates   map[string]*types.AircraftState
-	flightValidation map[string]bool
-	storeError       error
-	getError         error
+	flights        map[string]*types.Flight
+	aircraftStates map[string]*types.AircraftState
+	storeError     error
+	getError       error
 }
 
 func newMockRedisClient() *mockRedisClient {
 	return &mockRedisClient{
-		flights:          make(map[string]*types.Flight),
-		aircraftStates:   make(map[string]*types.AircraftState),
-		flightValidation: make(map[string]bool),
+		flights:        make(map[string]*types.Flight),
+		aircraftStates: make(map[string]*types.AircraftState),
 	}
 }
 
@@ -116,22 +114,6 @@ func (m *mockRedisClient) GetAircraftState(ctx context.Context, hexIdent string)
 func (m *mockRedisClient) DeleteAircraftState(ctx context.Context, hexIdent string) error {
 	delete(m.aircraftStates, hexIdent)
 	return nil
-}
-
-func (m *mockRedisClient) SetFlightValidation(ctx context.Context, hexIdent string, valid bool) error {
-	m.flightValidation[hexIdent] = valid
-	return nil
-}
-
-func (m *mockRedisClient) GetFlightValidation(ctx context.Context, hexIdent string) (bool, error) {
-	if m.getError != nil {
-		return false, m.getError
-	}
-	valid, exists := m.flightValidation[hexIdent]
-	if !exists {
-		return true, nil
-	}
-	return valid, nil
 }
 
 func (m *mockRedisClient) Close() error { return nil }
@@ -206,7 +188,6 @@ func TestStateTracker_ProcessMessage(t *testing.T) {
 			setupMocks: func() (*mockDBClient, *mockRedisClient) {
 				mockDB := &mockDBClient{}
 				mockRedis := newMockRedisClient()
-				_ = mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
 				return mockDB, mockRedis
 			},
 			expectError: false,
@@ -233,25 +214,9 @@ func TestStateTracker_ProcessMessage(t *testing.T) {
 			setupMocks: func() (*mockDBClient, *mockRedisClient) {
 				mockDB := &mockDBClient{storeError: fmt.Errorf("db error")}
 				mockRedis := newMockRedisClient()
-				_ = mockRedis.SetFlightValidation(context.Background(), "ABC123", true)
 				return mockDB, mockRedis
 			},
 			expectError: true,
-		},
-		{
-			name: "invalid flight validation",
-			message: &types.SBSMessage{
-				Raw:       "MSG,3,1,1,ABC123,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST123,10000,450,180,40.7128,-74.0060,0,0,0,0,0,0",
-				Timestamp: time.Now(),
-				Source:    "test-source",
-			},
-			setupMocks: func() (*mockDBClient, *mockRedisClient) {
-				mockDB := &mockDBClient{}
-				mockRedis := newMockRedisClient()
-				_ = mockRedis.SetFlightValidation(context.Background(), "ABC123", false)
-				return mockDB, mockRedis
-			},
-			expectError: false,
 		},
 	}
 

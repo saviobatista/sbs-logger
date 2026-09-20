@@ -124,27 +124,3 @@ func (c *Client) DeleteAircraftState(ctx context.Context, hexIdent string) error
 	key := fmt.Sprintf("aircraft:%s", hexIdent)
 	return c.client.Del(ctx, key).Err()
 }
-
-// SetFlightValidation sets flight validation data
-func (c *Client) SetFlightValidation(ctx context.Context, hexIdent string, valid bool) error {
-	key := fmt.Sprintf("validation:%s", hexIdent)
-	value := "1"
-	if !valid {
-		value = "0"
-	}
-	return c.client.Set(ctx, key, value, 24*time.Hour).Err()
-}
-
-// GetFlightValidation gets flight validation status
-func (c *Client) GetFlightValidation(ctx context.Context, hexIdent string) (bool, error) {
-	key := fmt.Sprintf("validation:%s", hexIdent)
-	val, err := c.client.Get(ctx, key).Result()
-	if err == redis.Nil {
-		return false, nil // No validation data
-	}
-	if err != nil {
-		return false, fmt.Errorf("failed to get validation data: %w", err)
-	}
-
-	return val == "1", nil
-}

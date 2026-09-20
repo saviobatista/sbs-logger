@@ -39,8 +39,6 @@ type RedisClient interface {
 	StoreAircraftState(ctx context.Context, state *types.AircraftState) error
 	GetAircraftState(ctx context.Context, hexIdent string) (*types.AircraftState, error)
 	DeleteAircraftState(ctx context.Context, hexIdent string) error
-	SetFlightValidation(ctx context.Context, hexIdent string, valid bool) error
-	GetFlightValidation(ctx context.Context, hexIdent string) (bool, error)
 	Close() error
 }
 
@@ -113,14 +111,6 @@ func (t *StateTracker) ProcessMessage(msg *types.SBSMessage) error {
 
 	t.stats.IncrementParsedMessages()
 	t.stats.IncrementMessageType(state.MsgType)
-
-	// Check flight validation in Redis
-	valid, err := t.redis.GetFlightValidation(context.Background(), state.HexIdent)
-	if err != nil {
-		log.Printf("Warning: Failed to get flight validation: %v", err)
-	} else if !valid {
-		return nil // Skip invalid flights
-	}
 
 	// Update state cache
 	latestState, exists := t.states[state.HexIdent]
