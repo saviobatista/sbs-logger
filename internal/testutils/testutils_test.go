@@ -36,8 +36,8 @@ func TestMockSBSMessage(t *testing.T) {
 		t.Errorf("First part should be 'MSG', got '%s'", parts[0])
 	}
 
-	if parts[5] != hexIdent {
-		t.Errorf("Sixth part should be hexIdent '%s', got '%s'", hexIdent, parts[5])
+	if parts[4] != hexIdent {
+		t.Errorf("Sixth part should be hexIdent '%s', got '%s'", hexIdent, parts[4])
 	}
 
 	// Check timestamp is recent
@@ -81,8 +81,8 @@ func TestMockSBSMessage_DifferentTypes(t *testing.T) {
 			}
 
 			// Check hex identifier is in the right position
-			if parts[5] != tc.hexIdent {
-				t.Errorf("Expected hexIdent %s, got %s", tc.hexIdent, parts[5])
+			if parts[4] != tc.hexIdent {
+				t.Errorf("Expected hexIdent %s, got %s", tc.hexIdent, parts[4])
 			}
 		})
 	}
@@ -148,8 +148,8 @@ func TestMockSBSMessage_EmptyHexIdent(t *testing.T) {
 	}
 
 	parts := strings.Split(msg.Raw, ",")
-	if parts[5] != "" {
-		t.Errorf("Expected empty hexIdent, got '%s'", parts[5])
+	if parts[4] != "" {
+		t.Errorf("Expected empty hexIdent, got '%s'", parts[4])
 	}
 }
 

@@ -14,18 +14,9 @@ type MessageType int
 
 const (
 	// SBS message types
-	MsgTypeSelectionChange MessageType = 1
-	MsgTypeNewAircraft     MessageType = 2
-	MsgTypeNewID           MessageType = 3
-	MsgTypeNewCallSign     MessageType = 4
-	MsgTypeNewAltitude     MessageType = 5
-	MsgTypeNewGroundSpeed  MessageType = 6
-	MsgTypeNewTrack        MessageType = 7
-	MsgTypeNewLatLon       MessageType = 8
-	MsgTypeNewGround       MessageType = 9
-	MsgTypeStatus          MessageType = 10 // STA messages
-	MsgTypeAircraft        MessageType = 11 // AIR messages
-	MsgTypeID              MessageType = 12 // ID messages
+	MsgTypeStatus   MessageType = 10 // STA messages
+	MsgTypeAircraft MessageType = 11 // AIR messages
+	MsgTypeID       MessageType = 12 // ID messages
 )
 
 // ParseMessage parses a raw SBS message into an aircraft state
@@ -43,11 +34,17 @@ func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error)
 
 	switch messageType {
 	case "MSG":
-		// Standard SBS format: MSG,type,transmission_type,session_id,aircraft_id,hex_ident,flight_id,...
+		// Standard SBS (BaseStation) format, 22 fields:
+		// MSG,transmission_type,session_id,aircraft_id,hex_ident,flight_id,
+		// date_gen,time_gen,date_log,time_log,callsign,altitude,ground_speed,
+		// track,lat,lon,vertical_rate,squawk,alert,emergency,spi,is_on_ground.
+		// The field indexes below are the standard ones; msgTypeIndex is an
+		// extra offset and is 0 here. It used to be 1, which read the flight_id
+		// as the hex ident and shifted every other field by one.
 		if len(fields) < 22 {
 			return nil, fmt.Errorf("invalid SBS message format: expected at least 22 fields, got %d (raw: %q)", len(fields), raw)
 		}
-		msgTypeIndex = 1 // Message type is at index 1 after "MSG"
+		msgTypeIndex = 0
 
 	case "STA", "AIR", "ID":
 		// Status/Aircraft/ID format: TYPE,,transmission_type,session_id,aircraft_id,hex_ident,flight_id,...
@@ -61,14 +58,10 @@ func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error)
 			Timestamp: timestamp,
 		}
 
-		// Extract hex identifier if available
+		// Extract hex identifier if available. These messages carry no
+		// callsign: fields 6-9 are the generated/logged date and time.
 		if len(fields) > 4 {
 			state.HexIdent = fields[4]
-		}
-
-		// Extract callsign if available
-		if len(fields) > 9 {
-			state.Callsign = fields[9]
 		}
 
 		return state, nil
@@ -78,9 +71,9 @@ func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error)
 	}
 
 	// Parse message type
-	msgType, err := strconv.Atoi(fields[msgTypeIndex])
+	msgType, err := strconv.Atoi(fields[1])
 	if err != nil {
-		return nil, fmt.Errorf("invalid message type: %w (field value: %q)", err, fields[msgTypeIndex])
+		return nil, fmt.Errorf("invalid message type: %w (field value: %q)", err, fields[1])
 	}
 
 	// Create state
@@ -97,51 +90,26 @@ func ParseMessage(raw string, timestamp time.Time) (*types.AircraftState, error)
 	return state, nil
 }
 
-// parseMessageFields parses the message fields based on message type
+// parseMessageFields fills the state from the SBS columns. The transmission
+// type (MSG,1..8) says which columns a message carries, but the columns are
+// fixed, so reading every non-empty one is both simpler and right: MSG,1 has
+// the callsign, MSG,3 the altitude and position, MSG,4 the velocity, MSG,6
+// the squawk, and so on. The old per-type switch mapped the types to a
+// different vocabulary (MSG,1 skipped, velocity read from MSG,6 and 7) and
+// lost the callsign and the speed of every aircraft.
 func parseMessageFields(state *types.AircraftState, fields []string, msgTypeIndex int) error {
-	// Set hex identifier for all message types that have it
-	if state.MsgType != int(MsgTypeSelectionChange) && state.MsgType != int(MsgTypeNewAircraft) {
-		state.HexIdent = fields[4+msgTypeIndex]
-	}
-
-	switch MessageType(state.MsgType) {
-	case MsgTypeSelectionChange, MsgTypeNewAircraft:
-		// These messages don't contain state information
-		return nil
-
-	case MsgTypeNewID:
-		// Only hex identifier is set above
-
-	case MsgTypeNewCallSign:
-		state.Callsign = fields[10+msgTypeIndex]
-
-	case MsgTypeNewAltitude:
-		parseAltitude(state, fields, msgTypeIndex)
-
-	case MsgTypeNewGroundSpeed:
-		parseGroundSpeed(state, fields, msgTypeIndex)
-
-	case MsgTypeNewTrack:
-		parseTrack(state, fields, msgTypeIndex)
-
-	case MsgTypeNewLatLon:
-		parseLatLon(state, fields, msgTypeIndex)
-
-	case MsgTypeNewGround:
-		parseOnGround(state, fields, msgTypeIndex)
-
-	case MsgTypeStatus, MsgTypeAircraft, MsgTypeID:
-		// These are status/info messages that don't contain state information
-		// but we can extract some basic info if available
-		if len(fields) > 10+msgTypeIndex {
-			state.Callsign = fields[10+msgTypeIndex]
-		}
-		return nil
-
-	default:
+	if state.MsgType < 1 || state.MsgType > 8 {
 		return fmt.Errorf("unknown message type: %d (raw message: %q)", state.MsgType, strings.Join(fields, ","))
 	}
-
+	state.HexIdent = strings.TrimSpace(fields[4+msgTypeIndex])
+	if cs := strings.TrimSpace(fields[10+msgTypeIndex]); cs != "" {
+		state.Callsign = cs
+	}
+	parseAltitude(state, fields, msgTypeIndex)
+	parseGroundSpeed(state, fields, msgTypeIndex)
+	parseTrack(state, fields, msgTypeIndex)
+	parseLatLon(state, fields, msgTypeIndex)
+	parseOnGround(state, fields, msgTypeIndex)
 	return nil
 }
 
@@ -174,17 +142,12 @@ func parseLatLon(state *types.AircraftState, fields []string, msgTypeIndex int) 
 	if lon, err := strconv.ParseFloat(fields[15+msgTypeIndex], 64); err == nil {
 		state.Longitude = lon
 	}
-	parseAltitude(state, fields, msgTypeIndex)
-	parseGroundSpeed(state, fields, msgTypeIndex)
-	parseTrack(state, fields, msgTypeIndex)
-
 	if vr, err := strconv.Atoi(fields[16+msgTypeIndex]); err == nil {
 		state.VerticalRate = vr
 	}
 	if squawk, err := strconv.Atoi(fields[17+msgTypeIndex]); err == nil {
 		state.Squawk = fmt.Sprintf("%04d", squawk)
 	}
-	parseOnGround(state, fields, msgTypeIndex)
 }
 
 // parseOnGround parses on ground field
