@@ -121,8 +121,11 @@ func (t *StateTracker) ProcessMessage(msg *types.SBSMessage) error {
 		t.mergeStates(latestState, state)
 	}
 
-	// Store aircraft state in Redis
-	if err := t.redis.StoreAircraftState(context.Background(), state); err != nil {
+	// Store the merged aircraft state in Redis: it is the "current state"
+	// cache, and one SBS message carries only a slice of it (a MSG,1 has the
+	// callsign, a MSG,3 the position). Storing the partial message left the
+	// cache with whatever the last message happened to contain.
+	if err := t.redis.StoreAircraftState(context.Background(), t.states[state.HexIdent]); err != nil {
 		log.Printf("Warning: Failed to store aircraft state in Redis: %v", err)
 	}
 
@@ -374,7 +377,7 @@ func setupStateTracker(dbClient *db.Client, redisClient *redis.Client) (*StateTr
 
 // setupNATSSubscription sets up the NATS subscription for SBS messages
 func setupNATSSubscription(natsClient *nats.Client, tracker *StateTracker) error {
-	if err := natsClient.SubscribeSBSRaw(func(msg *types.SBSMessage) {
+	if err := natsClient.SubscribeSBSRawFromNow(func(msg *types.SBSMessage) {
 		if err := tracker.ProcessMessage(msg); err != nil {
 			log.Printf("Failed to process message: %v", err)
 		}

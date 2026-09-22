@@ -66,8 +66,21 @@ func (c *Client) PublishSBSMessage(msg *types.SBSMessage) error {
 	return nil
 }
 
-// SubscribeSBSRaw subscribes to raw SBS messages
+// SubscribeSBSRaw subscribes to raw SBS messages, replaying the stream from
+// its start (the logger wants every message it missed while down).
 func (c *Client) SubscribeSBSRaw(handler func(*types.SBSMessage)) error {
+	return c.subscribe(handler)
+}
+
+// SubscribeSBSRawFromNow subscribes to raw SBS messages published from now
+// on. The tracker uses it: its job is the current state, and replaying a
+// 24h stream at the receiver's own rate left it minutes behind, where every
+// state it wrote was already "ended" by the 5-minute rule.
+func (c *Client) SubscribeSBSRawFromNow(handler func(*types.SBSMessage)) error {
+	return c.subscribe(handler, nats.DeliverNew())
+}
+
+func (c *Client) subscribe(handler func(*types.SBSMessage), opts ...nats.SubOpt) error {
 	_, err := c.js.Subscribe(SubjectSBSRaw, func(msg *nats.Msg) {
 		var sbsMsg types.SBSMessage
 		if err := json.Unmarshal(msg.Data, &sbsMsg); err != nil {
@@ -75,7 +88,7 @@ func (c *Client) SubscribeSBSRaw(handler func(*types.SBSMessage)) error {
 			return
 		}
 		handler(&sbsMsg)
-	})
+	}, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe: %w", err)
 	}
