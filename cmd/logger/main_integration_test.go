@@ -30,7 +30,7 @@ func setupTestContainers(t *testing.T) (*testContainers, error) {
 			Image:        "nats:2.9-alpine",
 			ExposedPorts: []string{"4222/tcp"},
 			Cmd:          []string{"-js"},
-			WaitingFor:   wait.ForLog("Server is ready"),
+			WaitingFor:   wait.ForAll(wait.ForLog("Server is ready"), wait.ForListeningPort("4222/tcp")),
 		},
 		Started: true,
 	})

@@ -25,7 +25,7 @@ func setupTestContainers(t *testing.T) *testContainers {
 	// Start NATS container
 	natsContainer, err := natscontainer.Run(ctx, "nats:2.9-alpine",
 		testcontainers.WithWaitStrategy(
-			wait.ForLog("Server is ready"),
+			wait.ForAll(wait.ForLog("Server is ready"), wait.ForListeningPort("4222/tcp")),
 		),
 	)
 	if err != nil {
