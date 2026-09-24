@@ -1,8 +1,10 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -604,3 +606,135 @@ func TestParseEnvironment_Integration(t *testing.T) {
 }
 
 // Helper functions
+
+// Regression: the ingestor publishes each SBS message without its "\r\n"
+// and the logger wrote msg.Raw as is, so a whole day ended up on one line
+// ("...,0,0MSG,4,..."). Each message must be exactly one "\n"-terminated line.
+func TestWriteBatch_OneLinePerMessage(t *testing.T) {
+	dir := t.TempDir()
+	logger := NewLogger(dir)
+	if err := logger.rotateFile(); err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+
+	ts := time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC)
+	msgs := []*types.SBSMessage{
+		{Raw: "MSG,5,333,8006,E49BFC,8106,2026/09/24,00:00:00.075,2026/09/24,00:00:00.075,,14875,,,,,,,0,,0,0", Timestamp: ts},
+		{Raw: "AIR,,333,8022,E49C05,8122,2026/09/24,00:00:00.083,2026/09/24,00:00:00.083", Timestamp: ts},
+		{Raw: "", Timestamp: ts}, // nothing to write
+		{Raw: "MSG,4,333,7933,E49329,8033,2026/09/24,00:00:00.077,2026/09/24,00:00:00.077,,,233.0,272.5,,,64,,,,,\r\n", Timestamp: ts},
+	}
+	if err := logger.WriteBatch(msgs[:2]); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range msgs[2:] {
+		if err := logger.WriteMessage(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	content, err := os.ReadFile(logger.GetCurrentFile().Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := msgs[0].Raw + "\n" + msgs[1].Raw + "\n" + strings.TrimRight(msgs[3].Raw, "\r\n") + "\n"
+	if string(content) != want {
+		t.Errorf("file content:\n%q\nwant:\n%q", content, want)
+	}
+	if got := logger.messages.Value(); got != 3 {
+		t.Errorf("messages written = %v, want 3", got)
+	}
+	if got := logger.bytes.Value(); got != float64(len(want)) {
+		t.Errorf("bytes written = %v, want %d", got, len(want))
+	}
+}
+
+// Regression: compressFile copied the log into the .gz file uncompressed, so
+// the rotated "sbs_<day>.log.gz" files were plain text gzip cannot read.
+func TestCompressFile_WritesRealGzip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sbs_2026-09-23.log")
+	original := strings.Repeat("MSG,3,333,2524,E48053,2624,2026/09/23,00:00:00.018,2026/09/23,00:00:00.018,,8500,,,-23.22957,-46.49073,,,0,0,0,0\n", 1000)
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := compressFile(path); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path + ".gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("not a gzip file: %v", err)
+	}
+	got, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != original {
+		t.Error("decompressed content differs from the original")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("original file not removed")
+	}
+	if _, err := os.Stat(path + ".gz.tmp"); !os.IsNotExist(err) {
+		t.Error("temporary file left behind")
+	}
+}
+
+// A day change must not block the writer, even with a rotation already
+// requested and nobody serving the channel.
+func TestWriteBatch_RotationRequestDoesNotBlock(t *testing.T) {
+	logger := NewLogger(t.TempDir())
+	if err := logger.rotateFile(); err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+	logger.SetCurrentDateForTesting("2000-01-01")
+
+	done := make(chan error, 1)
+	go func() {
+		var err error
+		for i := 0; i < 3; i++ {
+			if werr := logger.WriteMessage(&types.SBSMessage{Raw: "MSG,1", Timestamp: time.Now()}); werr != nil {
+				err = werr
+			}
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("WriteMessage blocked on the rotation request")
+	}
+}
+
+func TestLoggerMetrics(t *testing.T) {
+	logger := NewLogger(t.TempDir())
+	if err := logger.rotateFile(); err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+	if err := logger.WriteMessage(&types.SBSMessage{Raw: "MSG,1", Timestamp: time.Now().Add(-2 * time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	logger.metrics.WriteText(&b)
+	for _, want := range []string{
+		"sbs_logger_messages_written_total 1\n",
+		"sbs_logger_bytes_written_total 6\n",
+		"sbs_logger_write_errors_total 0\n",
+		"sbs_logger_lag_seconds 2",
+	} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("metrics lack %q:\n%s", want, b.String())
+		}
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/saviobatista/sbs-logger/internal/metrics"
 	"github.com/saviobatista/sbs-logger/internal/nats"
 	"github.com/saviobatista/sbs-logger/internal/types"
 )
@@ -20,6 +22,37 @@ type NATSClient interface {
 	PublishSBSMessage(msg *types.SBSMessage) error
 	Close()
 }
+
+// metricsPort is the default port of the /metrics endpoint.
+const metricsPort = "9101"
+
+// maxPendingLine bounds the bytes kept while waiting for a line terminator.
+// An SBS line is under 200 bytes; a stream without terminators must not
+// grow the buffer forever.
+const maxPendingLine = 64 * 1024
+
+// ingestMetrics are the ingestor's Prometheus series, labeled by source.
+type ingestMetrics struct {
+	messages      metrics.CounterVec
+	bytes         metrics.CounterVec
+	reconnects    metrics.CounterVec
+	publishErrors metrics.CounterVec
+	connected     metrics.GaugeVec
+}
+
+func newIngestMetrics(reg *metrics.Registry) *ingestMetrics {
+	return &ingestMetrics{
+		messages:      reg.CounterVec("sbs_ingestor_messages_total", "SBS messages read and published, per source.", "source"),
+		bytes:         reg.CounterVec("sbs_ingestor_bytes_total", "Bytes read from the source, per source.", "source"),
+		reconnects:    reg.CounterVec("sbs_ingestor_reconnects_total", "Connections to the source after the first one, per source.", "source"),
+		publishErrors: reg.CounterVec("sbs_ingestor_publish_errors_total", "Messages that failed to publish to NATS, per source.", "source"),
+		connected:     reg.GaugeVec("sbs_ingestor_connected", "1 while connected to the source.", "source"),
+	}
+}
+
+// ingestorMetrics is used by connectAndIngest; main replaces it with the
+// served registry.
+var ingestorMetrics = newIngestMetrics(metrics.NewRegistry())
 
 func main() {
 	// Load configuration
@@ -45,6 +78,11 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Prometheus metrics (default :9101, METRICS_ADDR overrides, empty disables)
+	reg := metrics.NewRegistry()
+	ingestorMetrics = newIngestMetrics(reg)
+	reg.Serve(ctx, metrics.Addr(metricsPort))
+
 	// Start ingesting from each source
 	sourceList := strings.Split(sources, ",")
 	for _, source := range sourceList {
@@ -63,16 +101,40 @@ func main() {
 }
 
 func ingestSource(ctx context.Context, source string, client NATSClient) {
+	connections := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
+			if connections > 0 {
+				ingestorMetrics.reconnects.With(source).Inc()
+			}
+			connections++
 			if err := connectAndIngest(ctx, source, client); err != nil {
 				log.Printf("Error from source %s: %v", source, err)
 				time.Sleep(5 * time.Second) // Wait before retrying
 			}
 		}
+	}
+}
+
+// splitLines returns the complete lines in buf and the bytes after the last
+// line terminator, which may be the start of a line still being received.
+// SBS/BaseStation lines end in "\r\n"; a bare "\n" is accepted too. The
+// lines have the terminator and surrounding spaces removed: the NATS payload
+// is the bare SBS message (the tracker parses it as is, the logger adds the
+// "\n" when it writes the file).
+func splitLines(buf []byte) (lines []string, rest []byte) {
+	for {
+		i := bytes.IndexByte(buf, '\n')
+		if i < 0 {
+			return lines, buf
+		}
+		if line := strings.TrimSpace(string(buf[:i])); line != "" {
+			lines = append(lines, line)
+		}
+		buf = buf[i+1:]
 	}
 }
 
@@ -89,10 +151,12 @@ func connectAndIngest(ctx context.Context, source string, client NATSClient) err
 	}()
 
 	log.Printf("Connected to source: %s", source)
+	connected := ingestorMetrics.connected.With(source)
+	connected.Set(1)
+	defer connected.Set(0)
 
-	// Create buffer for reading messages
-	buf := make([]byte, 1024)
-	var messageBuffer strings.Builder
+	buf := make([]byte, 4096)
+	var pending []byte
 
 	for {
 		select {
@@ -109,39 +173,31 @@ func connectAndIngest(ctx context.Context, source string, client NATSClient) err
 			if err != nil {
 				return fmt.Errorf("read error: %w", err)
 			}
+			ingestorMetrics.bytes.With(source).Add(float64(n))
 
-			// Add to message buffer
-			messageBuffer.Write(buf[:n])
-
-			// Process complete messages (split by \r\n)
-			data := messageBuffer.String()
-			messages := strings.Split(data, "\r\n")
-
-			// Keep the last message in buffer (it might be incomplete)
-			messageBuffer.Reset()
-			if len(messages) > 1 {
-				// Process all complete messages except the last one
-				for i := 0; i < len(messages)-1; i++ {
-					message := strings.TrimSpace(messages[i])
-					if message != "" {
-						// Create and publish message
-						msg := &types.SBSMessage{
-							Raw:       message,
-							Timestamp: time.Now().UTC(),
-							Source:    source,
-						}
-
-						if err := client.PublishSBSMessage(msg); err != nil {
-							log.Printf("Failed to publish message: %v", err)
-							continue
-						}
-					}
-				}
+			pending = append(pending, buf[:n]...)
+			var lines []string
+			lines, pending = splitLines(pending)
+			if len(pending) > maxPendingLine {
+				log.Printf("Dropping %d bytes from %s without a line terminator", len(pending), source)
+				pending = pending[:0]
 			}
+			// Keep the partial line in a buffer of its own, so the next
+			// append does not grow the old backing array forever.
+			pending = append([]byte(nil), pending...)
 
-			// Keep the last message in buffer (might be incomplete)
-			if len(messages) > 0 {
-				messageBuffer.WriteString(messages[len(messages)-1])
+			for _, line := range lines {
+				msg := &types.SBSMessage{
+					Raw:       line,
+					Timestamp: time.Now().UTC(),
+					Source:    source,
+				}
+				if err := client.PublishSBSMessage(msg); err != nil {
+					ingestorMetrics.publishErrors.With(source).Inc()
+					log.Printf("Failed to publish message: %v", err)
+					continue
+				}
+				ingestorMetrics.messages.With(source).Inc()
 			}
 		}
 	}

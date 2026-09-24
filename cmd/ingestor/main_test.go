@@ -400,3 +400,81 @@ func createMockTCPServer(messages []string) (net.Listener, error) {
 
 	return listener, nil
 }
+
+func TestSplitLines(t *testing.T) {
+	tests := []struct {
+		name      string
+		in        string
+		wantLines []string
+		wantRest  string
+	}{
+		{"crlf", "MSG,1,a\r\nMSG,3,b\r\n", []string{"MSG,1,a", "MSG,3,b"}, ""},
+		{"bare lf", "MSG,1,a\nMSG,3,b\n", []string{"MSG,1,a", "MSG,3,b"}, ""},
+		{"partial tail", "MSG,1,a\r\nMSG,3,", []string{"MSG,1,a"}, "MSG,3,"},
+		{"cr of crlf in the next read", "MSG,1,a\r", nil, "MSG,1,a\r"},
+		{"blank lines", "\r\n\r\nMSG,1,a\r\n", []string{"MSG,1,a"}, ""},
+		{"empty", "", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lines, rest := splitLines([]byte(tt.in))
+			if fmt.Sprint(lines) != fmt.Sprint(tt.wantLines) || string(rest) != tt.wantRest {
+				t.Errorf("splitLines(%q) = %q, %q; want %q, %q", tt.in, lines, rest, tt.wantLines, tt.wantRest)
+			}
+		})
+	}
+}
+
+// Messages split across TCP reads, with "\r\n" or a bare "\n", come out as
+// one published message each, without the terminator. A feed with bare
+// "\n" used to publish nothing (the ingestor split on "\r\n" only).
+func TestConnectAndIngest_FragmentedStream(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	chunks := []string{
+		"MSG,5,333,8006,E49BFC,8106,2026/09/24,00:00:00.075,2026/09/24,00:00:00.075,,14875,,,,,,,0,,0,0\r",
+		"\nMSG,4,333,7933,E49329,8033,2026/09/24,00:00:00.077,2026/09/24,",
+		"00:00:00.077,,,233.0,272.5,,,64,,,,,\r\nAIR,,333,8022,E49C05,8122,2026/09/24,00:00:00.083,2026/09/24,00:00:00.083\n",
+	}
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for _, c := range chunks {
+			_, _ = conn.Write([]byte(c))
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	client := &mockNATSClient{}
+	_ = connectAndIngest(ctx, l.Addr().String(), client) // returns on EOF
+
+	got := client.GetPublishedMessages()
+	want := []string{
+		"MSG,5,333,8006,E49BFC,8106,2026/09/24,00:00:00.075,2026/09/24,00:00:00.075,,14875,,,,,,,0,,0,0",
+		"MSG,4,333,7933,E49329,8033,2026/09/24,00:00:00.077,2026/09/24,00:00:00.077,,,233.0,272.5,,,64,,,,,",
+		"AIR,,333,8022,E49C05,8122,2026/09/24,00:00:00.083,2026/09/24,00:00:00.083",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("published %d messages, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].Raw != want[i] {
+			t.Errorf("message %d = %q, want %q", i, got[i].Raw, want[i])
+		}
+	}
+	src := l.Addr().String()
+	if v := ingestorMetrics.messages.With(src).Value(); v != 3 {
+		t.Errorf("messages metric = %v, want 3", v)
+	}
+	if v := ingestorMetrics.bytes.With(src).Value(); v != float64(len(strings.Join(chunks, ""))) {
+		t.Errorf("bytes metric = %v", v)
+	}
+}
