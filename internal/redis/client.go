@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -65,28 +66,32 @@ func (c *Client) StoreFlight(ctx context.Context, flight *types.Flight) error {
 	return c.client.Set(ctx, key, data, 24*time.Hour).Err()
 }
 
-// getData retrieves data from Redis and unmarshals it into the target
-func (c *Client) getData(ctx context.Context, key string, target interface{}, dataType string) error {
+// getData retrieves data from Redis and unmarshals it into the target. It
+// reports whether the key existed.
+func (c *Client) getData(ctx context.Context, key string, target interface{}, dataType string) (bool, error) {
 	data, err := c.client.Get(ctx, key).Bytes()
-	if err == redis.Nil {
-		return nil // Data not found
+	if errors.Is(err, redis.Nil) {
+		return false, nil // Data not found
 	}
 	if err != nil {
-		return fmt.Errorf("failed to get %s data: %w", dataType, err)
+		return false, fmt.Errorf("failed to get %s data: %w", dataType, err)
 	}
 
 	if err := json.Unmarshal(data, target); err != nil {
-		return fmt.Errorf("failed to unmarshal %s data: %w", dataType, err)
+		return false, fmt.Errorf("failed to unmarshal %s data: %w", dataType, err)
 	}
 
-	return nil
+	return true, nil
 }
 
-// GetFlight retrieves flight data from Redis
+// GetFlight retrieves flight data from Redis. It returns nil, nil when the
+// key does not exist; it used to return an empty Flight, which callers took
+// for an existing flight.
 func (c *Client) GetFlight(ctx context.Context, hexIdent string) (*types.Flight, error) {
 	key := fmt.Sprintf("flight:%s", hexIdent)
 	var flight types.Flight
-	if err := c.getData(ctx, key, &flight, "flight"); err != nil {
+	found, err := c.getData(ctx, key, &flight, "flight")
+	if err != nil || !found {
 		return nil, err
 	}
 	return &flight, nil
@@ -109,11 +114,13 @@ func (c *Client) StoreAircraftState(ctx context.Context, state *types.AircraftSt
 	return c.client.Set(ctx, key, data, 1*time.Hour).Err()
 }
 
-// GetAircraftState retrieves the latest aircraft state from Redis
+// GetAircraftState retrieves the latest aircraft state from Redis (nil, nil
+// when the key does not exist)
 func (c *Client) GetAircraftState(ctx context.Context, hexIdent string) (*types.AircraftState, error) {
 	key := fmt.Sprintf("aircraft:%s", hexIdent)
 	var state types.AircraftState
-	if err := c.getData(ctx, key, &state, "aircraft state"); err != nil {
+	found, err := c.getData(ctx, key, &state, "aircraft state")
+	if err != nil || !found {
 		return nil, err
 	}
 	return &state, nil

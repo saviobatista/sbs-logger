@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -140,9 +141,10 @@ func TestDecimalSpeedMigrationUpgradesExistingData_Integration(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed state: %v", err)
 	}
-	if err := client.CreateFlight(&types.Flight{
-		SessionID: "old", HexIdent: "OLD001", StartedAt: ts, MaxGroundSpeed: 351,
-	}); err != nil {
+	// Raw SQL: the client now writes columns added by later migrations.
+	if _, err := sqlDB.Exec(
+		`INSERT INTO flights (session_id, hex_ident, started_at, max_ground_speed) VALUES ('old', 'OLD001', $1, 351)`, ts,
+	); err != nil {
 		t.Fatalf("seed flight: %v", err)
 	}
 
@@ -182,5 +184,141 @@ func TestDecimalSpeedMigrationUpgradesExistingData_Integration(t *testing.T) {
 	}
 	if n != 2 {
 		t.Errorf("aircraft_states_hourly counts %d states, want 2", n)
+	}
+}
+
+// Flight rows through the real schema: an active flight has ended_at NULL,
+// GetActiveFlights must read it back (scanning NULL into time.Time failed),
+// UpdateFlight must keep it NULL while active and report a missing row.
+func TestFlightRows_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+	sqlDB, connStr := startTimescale(t)
+	if err := migrations.New(sqlDB).Migrate(migrations.All()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	client, err := New(connStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+
+	ts := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	flight := &types.Flight{
+		SessionID: "s-1", HexIdent: "E49329", StartedAt: ts, LastSeenAt: ts,
+	}
+	if err := client.CreateFlight(flight); err != nil {
+		t.Fatalf("CreateFlight: %v", err)
+	}
+	flight.Callsign = "TAM3456"
+	flight.LastSeenAt = ts.Add(time.Minute)
+	flight.MaxAltitude = 5850
+	if err := client.UpdateFlight(flight); err != nil {
+		t.Fatalf("UpdateFlight (active): %v", err)
+	}
+
+	active, err := client.GetActiveFlights()
+	if err != nil {
+		t.Fatalf("GetActiveFlights: %v", err)
+	}
+	if len(active) != 1 || active[0].Callsign != "TAM3456" || !active[0].LastSeenAt.Equal(ts.Add(time.Minute)) {
+		t.Fatalf("active flights = %+v", active)
+	}
+
+	if err := client.UpdateFlight(&types.Flight{SessionID: "missing"}); !errors.Is(err, ErrFlightNotFound) {
+		t.Errorf("UpdateFlight on a missing row: %v, want ErrFlightNotFound", err)
+	}
+
+	// One active flight per aircraft.
+	if err := client.CreateFlight(&types.Flight{SessionID: "s-2", HexIdent: "E49329", StartedAt: ts}); err == nil {
+		t.Error("second active flight for the same aircraft was accepted")
+	}
+
+	flight.EndedAt = flight.LastSeenAt
+	if err := client.UpdateFlight(flight); err != nil {
+		t.Fatalf("UpdateFlight (end): %v", err)
+	}
+	if active, err = client.GetActiveFlights(); err != nil || len(active) != 0 {
+		t.Fatalf("after end: %d active flights, err %v", len(active), err)
+	}
+	if err := client.CreateFlight(&types.Flight{SessionID: "s-2", HexIdent: "E49329", StartedAt: ts.Add(time.Hour)}); err != nil {
+		t.Errorf("new flight after the previous one ended: %v", err)
+	}
+}
+
+// Migration 004 on a database at 003 with rows: last_seen_at is backfilled
+// and duplicate active flights are ended so the unique index can be built.
+func TestFlightLastSeenMigration_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+	sqlDB, _ := startTimescale(t)
+	all := migrations.All()
+	m := migrations.New(sqlDB)
+	if err := m.Migrate(all[:3]); err != nil {
+		t.Fatalf("migrate 001-003: %v", err)
+	}
+	ts := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	if _, err := sqlDB.Exec(`
+		INSERT INTO flights (session_id, hex_ident, started_at, ended_at) VALUES
+			('ended', 'AAA111', $1, $2),
+			('dup-old', 'BBB222', $1, NULL),
+			('dup-new', 'BBB222', $2, NULL)`, ts, ts.Add(time.Hour)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := m.Migrate(all); err != nil {
+		t.Fatalf("migrate to latest: %v", err)
+	}
+
+	check := func(id string, wantSeen time.Time, wantEnded bool) {
+		t.Helper()
+		var seen time.Time
+		var ended sql.NullTime
+		if err := sqlDB.QueryRow(`SELECT last_seen_at, ended_at FROM flights WHERE session_id = $1`, id).Scan(&seen, &ended); err != nil {
+			t.Fatal(err)
+		}
+		if !seen.Equal(wantSeen) || ended.Valid != wantEnded {
+			t.Errorf("%s: last_seen_at=%v ended=%v, want %v %v", id, seen, ended.Valid, wantSeen, wantEnded)
+		}
+	}
+	check("ended", ts.Add(time.Hour), true)
+	check("dup-old", ts, true)
+	check("dup-new", ts.Add(time.Hour), false)
+}
+
+// A batch of states lands in one transaction, decimals included.
+func TestStoreAircraftStates_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+	sqlDB, connStr := startTimescale(t)
+	if err := migrations.New(sqlDB).Migrate(migrations.All()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	client, err := New(connStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+
+	ts := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	states := make([]*types.AircraftState, 2500) // spans three INSERT chunks
+	for i := range states {
+		states[i] = &types.AircraftState{
+			HexIdent: "E49329", GroundSpeed: 233.5, Track: 272.5, MsgType: 4,
+			Timestamp: ts.Add(time.Duration(i) * time.Millisecond),
+		}
+	}
+	if err := client.StoreAircraftStates(states); err != nil {
+		t.Fatalf("StoreAircraftStates: %v", err)
+	}
+	var n int
+	var gs float64
+	if err := sqlDB.QueryRow(`SELECT count(*), max(ground_speed) FROM aircraft_states`).Scan(&n, &gs); err != nil {
+		t.Fatal(err)
+	}
+	if n != len(states) || gs != 233.5 {
+		t.Errorf("stored %d states (max ground speed %v), want %d", n, gs, len(states))
 	}
 }

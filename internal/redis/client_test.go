@@ -252,7 +252,10 @@ func TestClient_GetFlight_Unit(t *testing.T) {
 			storedData:  map[string]string{},
 			getError:    nil,
 			expectError: false,
-			expectNil:   false, // Changed from true - getData returns nil but GetFlight returns empty struct
+			// A missing key is "no flight". It used to come back as an empty
+			// Flight, which the tracker took for an existing one and so never
+			// created a flight.
+			expectNil: true,
 		},
 		{
 			name:        "redis get error",
@@ -300,12 +303,7 @@ func TestClient_GetFlight_Unit(t *testing.T) {
 
 			// Verify flight data for successful retrieval
 			if !tt.expectError && !tt.expectNil && flight != nil {
-				if tt.hexIdent == "NOTFOUND" {
-					// For not found case, should return empty struct
-					if flight.HexIdent != "" {
-						t.Error("Expected empty HexIdent for not found flight")
-					}
-				} else if flight.HexIdent != testFlight.HexIdent {
+				if flight.HexIdent != testFlight.HexIdent {
 					t.Errorf("Expected HexIdent %s, got %s", testFlight.HexIdent, flight.HexIdent)
 				}
 			}
@@ -473,7 +471,7 @@ func TestClient_GetAircraftState_Unit(t *testing.T) {
 			storedData:  map[string]string{},
 			getError:    nil,
 			expectError: false,
-			expectNil:   false, // Changed from true - getData returns nil but GetAircraftState returns empty struct
+			expectNil:   true, // a missing key is "no state", not an empty state
 		},
 		{
 			name:        "redis get error",
@@ -521,12 +519,7 @@ func TestClient_GetAircraftState_Unit(t *testing.T) {
 
 			// Verify state data for successful retrieval
 			if !tt.expectError && !tt.expectNil && state != nil {
-				if tt.hexIdent == "NOTFOUND" {
-					// For not found case, should return empty struct
-					if state.HexIdent != "" {
-						t.Error("Expected empty HexIdent for not found aircraft state")
-					}
-				} else if state.HexIdent != testState.HexIdent {
+				if state.HexIdent != testState.HexIdent {
 					t.Errorf("Expected HexIdent %s, got %s", testState.HexIdent, state.HexIdent)
 				}
 			}
@@ -646,7 +639,10 @@ func TestClient_GetData_Unit(t *testing.T) {
 			ctx := context.Background()
 
 			var target map[string]interface{}
-			err := client.getData(ctx, tt.key, &target, "test")
+			found, err := client.getData(ctx, tt.key, &target, "test")
+			if wantFound := tt.name == "successful data retrieval"; found != wantFound {
+				t.Errorf("found = %v, want %v", found, wantFound)
+			}
 
 			if tt.expectError && err == nil {
 				t.Error("Expected error, got none")

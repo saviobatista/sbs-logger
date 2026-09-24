@@ -22,6 +22,7 @@ func All() []*Migration {
 		InitialSchema,
 		RetentionPolicies,
 		DecimalSpeedTrack,
+		FlightLastSeen,
 	}
 }
 

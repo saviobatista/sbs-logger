@@ -37,13 +37,16 @@ CREATE TABLE IF NOT EXISTS flights (
     last_latitude DOUBLE PRECISION,
     last_longitude DOUBLE PRECISION,
     max_altitude INTEGER,
-    max_ground_speed DOUBLE PRECISION
+    max_ground_speed DOUBLE PRECISION,
+    last_seen_at TIMESTAMPTZ
 );
 
 -- Create indexes for flights
 CREATE INDEX IF NOT EXISTS idx_flights_hex_ident ON flights (hex_ident);
 CREATE INDEX IF NOT EXISTS idx_flights_started_at ON flights (started_at);
 CREATE INDEX IF NOT EXISTS idx_flights_ended_at ON flights (ended_at);
+-- At most one active flight per aircraft
+CREATE UNIQUE INDEX IF NOT EXISTS uq_flights_active_hex_ident ON flights (hex_ident) WHERE ended_at IS NULL;
 
 -- Create statistics table
 CREATE TABLE IF NOT EXISTS system_stats (

@@ -2,6 +2,9 @@ package db
 
 import (
 	"database/sql"
+	"errors"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,86 +81,85 @@ func TestClient_Close_Unit(t *testing.T) {
 	}
 }
 
+const activeFlightsQuery = `SELECT session_id, hex_ident, callsign, started_at, last_seen_at,
+			first_latitude, first_longitude, last_latitude, last_longitude,
+			max_altitude, max_ground_speed
+		FROM flights
+		WHERE ended_at IS NULL`
+
+var activeFlightColumns = []string{
+	"session_id", "hex_ident", "callsign", "started_at", "last_seen_at",
+	"first_latitude", "first_longitude", "last_latitude", "last_longitude",
+	"max_altitude", "max_ground_speed",
+}
+
 func TestClient_GetActiveFlights_Unit(t *testing.T) {
+	started := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	seen := started.Add(20 * time.Minute)
+
 	tests := []struct {
 		name          string
 		setupMock     func(sqlmock.Sqlmock)
 		expectError   bool
 		expectedCount int
+		check         func(*testing.T, []*types.Flight)
 	}{
 		{
 			name: "successful retrieval with flights",
 			setupMock: func(mock sqlmock.Sqlmock) {
-				// NOTE: The query filters for "ended_at IS NULL", but still selects the ended_at column
-				// This is a bug in the actual code, but we test what it actually does
-				endTime := time.Time{} // Use zero time for NULL ended_at
-				rows := sqlmock.NewRows([]string{
-					"session_id", "hex_ident", "callsign", "started_at", "ended_at",
-					"first_latitude", "first_longitude", "last_latitude", "last_longitude",
-					"max_altitude", "max_ground_speed",
-				}).
-					AddRow("session1", "ABC123", "TEST123", time.Now(), endTime, 40.7128, -74.0060, 41.0000, -75.0000, 35000, 450.5).
-					AddRow("session2", "DEF456", "TEST456", time.Now(), endTime, 42.0000, -73.0000, 43.0000, -72.0000, 30000, 400.0)
-
-				mock.ExpectQuery(`SELECT session_id, hex_ident, callsign, started_at, ended_at,
-			first_latitude, first_longitude, last_latitude, last_longitude,
-			max_altitude, max_ground_speed
-		FROM flights
-		WHERE ended_at IS NULL`).
-					WillReturnRows(rows)
+				rows := sqlmock.NewRows(activeFlightColumns).
+					AddRow("session1", "ABC123", "TEST123", started, seen, 40.7128, -74.0060, 41.0, -75.0, 35000, 450.5).
+					AddRow("session2", "DEF456", "TEST456", started, seen, 42.0, -73.0, 43.0, -72.0, 30000, 400.0)
+				mock.ExpectQuery(regexp.QuoteMeta(activeFlightsQuery)).WillReturnRows(rows)
 			},
-			expectError:   false,
 			expectedCount: 2,
+			check: func(t *testing.T, flights []*types.Flight) {
+				f := flights[0]
+				if f.SessionID != "session1" || f.Callsign != "TEST123" || !f.LastSeenAt.Equal(seen) ||
+					f.MaxAltitude != 35000 || f.MaxGroundSpeed != 450.5 || !f.EndedAt.IsZero() {
+					t.Errorf("unexpected flight %+v", f)
+				}
+			},
+		},
+		{
+			// Rows written by the old code or before migration 004 have NULL
+			// columns. Scanning NULL into string/time.Time failed and kept the
+			// tracker from starting.
+			name: "NULL columns",
+			setupMock: func(mock sqlmock.Sqlmock) {
+				rows := sqlmock.NewRows(activeFlightColumns).
+					AddRow("session1", "ABC123", nil, started, nil, nil, nil, nil, nil, nil, nil)
+				mock.ExpectQuery(regexp.QuoteMeta(activeFlightsQuery)).WillReturnRows(rows)
+			},
+			expectedCount: 1,
+			check: func(t *testing.T, flights []*types.Flight) {
+				f := flights[0]
+				if f.Callsign != "" || !f.LastSeenAt.Equal(started) || f.MaxAltitude != 0 {
+					t.Errorf("unexpected flight %+v (last_seen_at should default to started_at)", f)
+				}
+			},
 		},
 		{
 			name: "no active flights",
 			setupMock: func(mock sqlmock.Sqlmock) {
-				rows := sqlmock.NewRows([]string{
-					"session_id", "hex_ident", "callsign", "started_at", "ended_at",
-					"first_latitude", "first_longitude", "last_latitude", "last_longitude",
-					"max_altitude", "max_ground_speed",
-				})
-
-				mock.ExpectQuery(`SELECT session_id, hex_ident, callsign, started_at, ended_at,
-			first_latitude, first_longitude, last_latitude, last_longitude,
-			max_altitude, max_ground_speed
-		FROM flights
-		WHERE ended_at IS NULL`).
-					WillReturnRows(rows)
+				mock.ExpectQuery(regexp.QuoteMeta(activeFlightsQuery)).WillReturnRows(sqlmock.NewRows(activeFlightColumns))
 			},
-			expectError:   false,
 			expectedCount: 0,
 		},
 		{
 			name: "database query error",
 			setupMock: func(mock sqlmock.Sqlmock) {
-				mock.ExpectQuery(`SELECT session_id, hex_ident, callsign, started_at, ended_at,
-			first_latitude, first_longitude, last_latitude, last_longitude,
-			max_altitude, max_ground_speed
-		FROM flights
-		WHERE ended_at IS NULL`).
-					WillReturnError(sql.ErrConnDone)
+				mock.ExpectQuery(regexp.QuoteMeta(activeFlightsQuery)).WillReturnError(sql.ErrConnDone)
 			},
 			expectError: true,
 		},
 		{
 			name: "scan error",
 			setupMock: func(mock sqlmock.Sqlmock) {
-				endTime := time.Time{} // Use zero time for NULL ended_at
-				rows := sqlmock.NewRows([]string{
-					"session_id", "hex_ident", "callsign", "started_at", "ended_at",
-					"first_latitude", "first_longitude", "last_latitude", "last_longitude",
-					"max_altitude", "max_ground_speed",
-				}).
-					AddRow("session1", "ABC123", "TEST123", time.Now(), endTime, 40.7128, -74.0060, 41.0000, -75.0000, 35000, 450.5).
+				rows := sqlmock.NewRows(activeFlightColumns).
+					AddRow("session1", "ABC123", "TEST123", started, seen, 40.7128, -74.0060, 41.0, -75.0, 35000, 450.5).
 					RowError(0, sql.ErrNoRows)
-
-				mock.ExpectQuery(`SELECT session_id, hex_ident, callsign, started_at, ended_at,
-			first_latitude, first_longitude, last_latitude, last_longitude,
-			max_altitude, max_ground_speed
-		FROM flights
-		WHERE ended_at IS NULL`).
-					WillReturnRows(rows)
+				mock.ExpectQuery(regexp.QuoteMeta(activeFlightsQuery)).WillReturnRows(rows)
 			},
 			expectError: true,
 		},
@@ -170,22 +172,21 @@ func TestClient_GetActiveFlights_Unit(t *testing.T) {
 				t.Fatalf("Failed to create mock DB: %v", err)
 			}
 			defer db.Close()
-
 			tt.setupMock(mock)
 
 			client := &Client{db: db}
 			flights, err := client.GetActiveFlights()
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error, got none")
+			if (err != nil) != tt.expectError {
+				t.Fatalf("GetActiveFlights() error = %v, expectError %v", err, tt.expectError)
 			}
-			if !tt.expectError && err != nil {
-				t.Errorf("Expected no error, got: %v", err)
+			if !tt.expectError {
+				if len(flights) != tt.expectedCount {
+					t.Fatalf("got %d flights, want %d", len(flights), tt.expectedCount)
+				}
+				if tt.check != nil {
+					tt.check(t, flights)
+				}
 			}
-			if !tt.expectError && len(flights) != tt.expectedCount {
-				t.Errorf("Expected %d flights, got %d", tt.expectedCount, len(flights))
-			}
-
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Errorf("Unmet expectations: %v", err)
 			}
@@ -194,11 +195,13 @@ func TestClient_GetActiveFlights_Unit(t *testing.T) {
 }
 
 func TestClient_CreateFlight_Unit(t *testing.T) {
+	started := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
 	flight := &types.Flight{
 		SessionID:      "test-session",
 		HexIdent:       "ABC123",
 		Callsign:       "TEST123",
-		StartedAt:      time.Now(),
+		StartedAt:      started,
+		LastSeenAt:     started,
 		FirstLatitude:  40.7128,
 		FirstLongitude: -74.0060,
 		LastLatitude:   41.0000,
@@ -213,20 +216,18 @@ func TestClient_CreateFlight_Unit(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "successful flight creation",
+			name: "successful flight creation (active: ended_at NULL)",
 			setupMock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`INSERT INTO flights`).
-					WithArgs("test-session", "ABC123", "TEST123", sqlmock.AnyArg(), 40.7128, -74.0060, 41.0000, -75.0000, 35000, 450.5).
+					WithArgs("test-session", "ABC123", "TEST123", started, nil, started,
+						40.7128, -74.0060, 41.0000, -75.0000, 35000, 450.5).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			},
-			expectError: false,
 		},
 		{
 			name: "database execution error",
 			setupMock: func(mock sqlmock.Sqlmock) {
-				mock.ExpectExec(`INSERT INTO flights`).
-					WithArgs("test-session", "ABC123", "TEST123", sqlmock.AnyArg(), 40.7128, -74.0060, 41.0000, -75.0000, 35000, 450.5).
-					WillReturnError(sql.ErrConnDone)
+				mock.ExpectExec(`INSERT INTO flights`).WillReturnError(sql.ErrConnDone)
 			},
 			expectError: true,
 		},
@@ -239,19 +240,13 @@ func TestClient_CreateFlight_Unit(t *testing.T) {
 				t.Fatalf("Failed to create mock DB: %v", err)
 			}
 			defer db.Close()
-
 			tt.setupMock(mock)
 
 			client := &Client{db: db}
 			err = client.CreateFlight(flight)
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error, got none")
+			if (err != nil) != tt.expectError {
+				t.Errorf("CreateFlight() error = %v, expectError %v", err, tt.expectError)
 			}
-			if !tt.expectError && err != nil {
-				t.Errorf("Expected no error, got: %v", err)
-			}
-
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Errorf("Unmet expectations: %v", err)
 			}
@@ -260,39 +255,66 @@ func TestClient_CreateFlight_Unit(t *testing.T) {
 }
 
 func TestClient_UpdateFlight_Unit(t *testing.T) {
-	endTime := time.Now()
-	flight := &types.Flight{
-		SessionID:      "test-session",
-		Callsign:       "UPDATED123",
-		EndedAt:        endTime,
-		LastLatitude:   42.0000,
-		LastLongitude:  -76.0000,
-		MaxAltitude:    40000,
-		MaxGroundSpeed: 500.0,
+	seen := time.Date(2026, 9, 24, 10, 30, 0, 0, time.UTC)
+	flight := func(ended time.Time) *types.Flight {
+		return &types.Flight{
+			SessionID:      "test-session",
+			HexIdent:       "ABC123",
+			Callsign:       "UPDATED123",
+			EndedAt:        ended,
+			LastSeenAt:     seen,
+			FirstLatitude:  40.0,
+			FirstLongitude: -74.0,
+			LastLatitude:   42.0000,
+			LastLongitude:  -76.0000,
+			MaxAltitude:    40000,
+			MaxGroundSpeed: 500.0,
+		}
 	}
 
 	tests := []struct {
 		name        string
+		flight      *types.Flight
 		setupMock   func(sqlmock.Sqlmock)
-		expectError bool
+		expectError error
+		anyError    bool
 	}{
 		{
-			name: "successful flight update",
+			name:   "ended flight",
+			flight: flight(seen),
 			setupMock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`UPDATE flights SET`).
-					WithArgs("UPDATED123", endTime, 42.0000, -76.0000, 40000, 500.0, "test-session").
-					WillReturnResult(sqlmock.NewResult(1, 1))
+					WithArgs("UPDATED123", seen, seen, 40.0, -74.0, 42.0000, -76.0000, 40000, 500.0, "test-session").
+					WillReturnResult(sqlmock.NewResult(0, 1))
 			},
-			expectError: false,
 		},
 		{
-			name: "database execution error",
+			// A zero EndedAt must stay NULL, not become 0001-01-01.
+			name:   "active flight keeps ended_at NULL",
+			flight: flight(time.Time{}),
 			setupMock: func(mock sqlmock.Sqlmock) {
 				mock.ExpectExec(`UPDATE flights SET`).
-					WithArgs("UPDATED123", endTime, 42.0000, -76.0000, 40000, 500.0, "test-session").
-					WillReturnError(sql.ErrConnDone)
+					WithArgs("UPDATED123", nil, seen, 40.0, -74.0, 42.0000, -76.0000, 40000, 500.0, "test-session").
+					WillReturnResult(sqlmock.NewResult(0, 1))
 			},
-			expectError: true,
+		},
+		{
+			// Updating a flight that was never inserted used to succeed
+			// silently; that hid the empty flights table.
+			name:   "no row for the session",
+			flight: flight(seen),
+			setupMock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(`UPDATE flights SET`).WillReturnResult(sqlmock.NewResult(0, 0))
+			},
+			expectError: ErrFlightNotFound,
+		},
+		{
+			name:   "database execution error",
+			flight: flight(seen),
+			setupMock: func(mock sqlmock.Sqlmock) {
+				mock.ExpectExec(`UPDATE flights SET`).WillReturnError(sql.ErrConnDone)
+			},
+			anyError: true,
 		},
 	}
 
@@ -303,19 +325,22 @@ func TestClient_UpdateFlight_Unit(t *testing.T) {
 				t.Fatalf("Failed to create mock DB: %v", err)
 			}
 			defer db.Close()
-
 			tt.setupMock(mock)
 
 			client := &Client{db: db}
-			err = client.UpdateFlight(flight)
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error, got none")
+			err = client.UpdateFlight(tt.flight)
+			switch {
+			case tt.expectError != nil:
+				if !errors.Is(err, tt.expectError) {
+					t.Errorf("UpdateFlight() error = %v, want %v", err, tt.expectError)
+				}
+			case tt.anyError:
+				if err == nil {
+					t.Error("UpdateFlight() expected an error")
+				}
+			case err != nil:
+				t.Errorf("UpdateFlight() unexpected error: %v", err)
 			}
-			if !tt.expectError && err != nil {
-				t.Errorf("Expected no error, got: %v", err)
-			}
-
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Errorf("Unmet expectations: %v", err)
 			}
@@ -1112,5 +1137,76 @@ func TestClient_StoreAircraftState_EdgeCases(t *testing.T) {
 	err = client.StoreAircraftState(state)
 	if err != nil {
 		t.Fatalf("StoreAircraftState() with extreme values failed: %v", err)
+	}
+}
+
+func TestClient_StoreAircraftStates_Unit(t *testing.T) {
+	ts := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	states := make([]*types.AircraftState, stateInsertChunk+2)
+	for i := range states {
+		states[i] = &types.AircraftState{HexIdent: "E49329", MsgType: 4, GroundSpeed: 233.5, Timestamp: ts.Add(time.Duration(i) * time.Millisecond)}
+	}
+
+	t.Run("one transaction, chunked inserts", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		mock.ExpectBegin()
+		mock.ExpectExec(`INSERT INTO aircraft_states`).WillReturnResult(sqlmock.NewResult(0, stateInsertChunk))
+		mock.ExpectExec(`INSERT INTO aircraft_states`).
+			WithArgs(states[stateInsertChunk].Timestamp, "E49329", "", 0, 233.5, 0.0, 0.0, 0.0, 0, "", false, 4,
+				states[stateInsertChunk+1].Timestamp, "E49329", "", 0, 233.5, 0.0, 0.0, 0.0, 0, "", false, 4).
+			WillReturnResult(sqlmock.NewResult(0, 2))
+		mock.ExpectCommit()
+
+		if err := (&Client{db: db}).StoreAircraftStates(states); err != nil {
+			t.Fatal(err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("failure rolls back", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		mock.ExpectBegin()
+		mock.ExpectExec(`INSERT INTO aircraft_states`).WillReturnError(sql.ErrConnDone)
+		mock.ExpectRollback()
+		if err := (&Client{db: db}).StoreAircraftStates(states[:3]); err == nil {
+			t.Fatal("expected an error")
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	t.Run("empty batch does nothing", func(t *testing.T) {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if err := (&Client{db: db}).StoreAircraftStates(nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Error(err)
+		}
+	})
+}
+
+func TestBuildStatesInsert(t *testing.T) {
+	q, args := buildStatesInsert([]*types.AircraftState{{HexIdent: "A"}, {HexIdent: "B"}})
+	if !strings.Contains(q, "($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12), ($13,") || !strings.HasSuffix(q, "$24)") {
+		t.Errorf("query placeholders: %s", q)
+	}
+	if len(args) != 24 || args[1] != "A" || args[13] != "B" {
+		t.Errorf("args = %v", args)
 	}
 }

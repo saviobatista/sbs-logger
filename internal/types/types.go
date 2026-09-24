@@ -28,13 +28,18 @@ type AircraftState struct {
 	SessionID    string    `json:"session_id"`
 }
 
-// Flight represents a complete flight session
+// Flight represents a flight session: one continuous period in which an
+// aircraft (hex ident) is heard. It starts with the first message of the
+// aircraft, is identified by SessionID, and ends when the aircraft goes
+// silent for longer than the tracker's timeout; EndedAt is then the time it
+// was last heard. A zero EndedAt means the flight is still active.
 type Flight struct {
 	SessionID      string    `json:"session_id"`
 	HexIdent       string    `json:"hex_ident"`
 	Callsign       string    `json:"callsign"`
 	StartedAt      time.Time `json:"started_at"`
 	EndedAt        time.Time `json:"ended_at"`
+	LastSeenAt     time.Time `json:"last_seen_at"`
 	FirstLatitude  float64   `json:"first_latitude"`
 	FirstLongitude float64   `json:"first_longitude"`
 	LastLatitude   float64   `json:"last_latitude"`

@@ -224,12 +224,57 @@ The tracker maintains real-time state for each aircraft:
 
 ### Flight Sessions
 
-Flight sessions are automatically detected and tracked:
+A flight session is one continuous period in which an aircraft (ICAO hex
+ident) is heard:
 
-- Session start/end times
-- Flight path (first/last position)
-- Maximum altitude and speed
-- Session statistics
+- **Start**: the first message of an aircraft that has no active flight
+  creates a row in `flights` with a new `session_id` (UUID) and
+  `started_at` = the message time.
+- **Updates**: the callsign, the first and last known position, the maximum
+  altitude and the maximum ground speed seen, and `last_seen_at`. The row is
+  written when the flight starts, at most once a minute while it is active,
+  when it ends and when the tracker shuts down.
+- **End**: when the aircraft has been silent for more than 5 minutes,
+  `ended_at` = `last_seen_at`. A message after such a gap starts a new session.
+- **Time** is the message (ingest) time, not the wall clock, so a tracker that
+  runs behind the stream still measures the gaps correctly.
+- **Restarts**: on startup the tracker resumes the flights with
+  `ended_at IS NULL` and closes the ones that went silent meanwhile. A partial
+  unique index allows one active flight per aircraft.
+
+### NATS consumers
+
+The logger and the tracker read `sbs.raw` through durable pull consumers named
+`sbs-logger` and `sbs-tracker`, in batches. A consumer is created on the first
+start with the messages published from then on, and every restart resumes
+after the last acknowledged message. Messages are acknowledged after they were
+written (logger) or stored (tracker); a failed batch is redelivered after 5 s.
+
+### Log files
+
+The logger writes `OUTPUT_DIR/sbs_YYYY-MM-DD.log` (UTC day), one SBS message
+per line terminated by `\n`, and gzips the previous day on rotation
+(`sbs_YYYY-MM-DD.log.gz`).
+
+Files written before this format was fixed have the day's messages
+concatenated on one line, and their `.log.gz` are plain text despite the
+name. `cmd/resplit` restores one message per line (plain or gzip input, it
+never overwrites an existing output file):
+
+```bash
+go run ./cmd/resplit -o sbs_2026-09-23.split.log sbs_2026-09-23.log.gz
+```
+
+### Metrics
+
+Each service serves Prometheus metrics at `/metrics`. `METRICS_ADDR`
+overrides the listen address (an empty value disables it).
+
+| Service  | Default port | Series |
+|----------|--------------|--------|
+| ingestor | 9101 | `sbs_ingestor_messages_total`, `sbs_ingestor_bytes_total`, `sbs_ingestor_reconnects_total`, `sbs_ingestor_publish_errors_total`, `sbs_ingestor_connected` (label `source`) |
+| logger   | 9102 | `sbs_logger_messages_written_total`, `sbs_logger_bytes_written_total`, `sbs_logger_write_errors_total`, `sbs_logger_lag_seconds` |
+| tracker  | 9103 | `sbs_tracker_messages_total`, `sbs_tracker_messages_parsed_total`, `sbs_tracker_messages_failed_total`, `sbs_tracker_states_stored_total`, `sbs_tracker_flights_created_total`, `sbs_tracker_flights_ended_total`, `sbs_tracker_flights_active`, `sbs_tracker_aircraft_active`, `sbs_tracker_lag_seconds` |
 
 ## 📈 Monitoring & Statistics
 
