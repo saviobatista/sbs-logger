@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -494,9 +495,15 @@ func TestNATSClient_Integration_ConcurrentPublishers(t *testing.T) {
 	// Give subscription time to establish
 	time.Sleep(100 * time.Millisecond)
 
-	// Publish messages concurrently from all clients
+	// Publish messages concurrently from all clients. The test waits for the
+	// publishers before returning: otherwise the deferred Close can run while
+	// a publisher is still sending, failing it with "nats: connection closed".
+	var publishers sync.WaitGroup
+	defer publishers.Wait()
 	for i, client := range clients {
+		publishers.Add(1)
 		go func(clientIndex int, client *Client) {
+			defer publishers.Done()
 			for j := 0; j < 10; j++ {
 				msg := &types.SBSMessage{
 					Raw:       fmt.Sprintf("MSG,8,111,11111,111111,ABC%d,1,2021-01-01,00:00:00.000,2021-01-01,00:00:00.000,TEST%d,10000,450,180,40.7128,-74.0060,0,0,0,0", clientIndex, j),
