@@ -16,6 +16,15 @@ type Migration struct {
 	CreatedAt time.Time
 }
 
+// All returns every migration, in the order it must be applied.
+func All() []*Migration {
+	return []*Migration{
+		InitialSchema,
+		RetentionPolicies,
+		DecimalSpeedTrack,
+	}
+}
+
 // Migrator manages database migrations
 type Migrator struct {
 	db *sql.DB

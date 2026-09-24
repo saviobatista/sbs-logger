@@ -7,8 +7,8 @@ CREATE TABLE IF NOT EXISTS aircraft_states (
     hex_ident TEXT NOT NULL,
     callsign TEXT,
     altitude INTEGER,
-    ground_speed INTEGER,
-    track INTEGER,
+    ground_speed DOUBLE PRECISION,
+    track DOUBLE PRECISION,
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
     vertical_rate INTEGER,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS flights (
     last_latitude DOUBLE PRECISION,
     last_longitude DOUBLE PRECISION,
     max_altitude INTEGER,
-    max_ground_speed INTEGER
+    max_ground_speed DOUBLE PRECISION
 );
 
 -- Create indexes for flights

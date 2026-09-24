@@ -350,14 +350,8 @@ func runMigrations(dbConnStr string) error {
 	// Create migrator
 	migrator := migrations.New(migrationDB)
 
-	// Define migrations
-	migrationList := []*migrations.Migration{
-		migrations.InitialSchema,
-		migrations.RetentionPolicies,
-	}
-
 	// Execute migrations
-	if err := migrator.Migrate(migrationList); err != nil {
+	if err := migrator.Migrate(migrations.All()); err != nil {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 

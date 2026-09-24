@@ -130,6 +130,11 @@ func TestParseMessage_RealSBS(t *testing.T) {
 			want: types.AircraftState{HexIdent: "E492A5", GroundSpeed: 412, Track: 187.3, VerticalRate: -1088, MsgType: 4},
 		},
 		{
+			// Ground speed and track are decimals in SBS; both must keep them.
+			raw:  "MSG,4,333,7933,E49329,8033,2026/09/24,00:00:00.077,2026/09/24,00:00:00.077,,,157.9,295.7,,,64,,,,,",
+			want: types.AircraftState{HexIdent: "E49329", GroundSpeed: 157.9, Track: 295.7, VerticalRate: 64, MsgType: 4},
+		},
+		{
 			raw:  "MSG,6,333,0,E492A5,100,2026/09/22,14:06:29.408,2026/09/22,14:06:29.408,,18650,,,,,,2201,0,0,0,0",
 			want: types.AircraftState{HexIdent: "E492A5", Altitude: 18650, Squawk: "2201", MsgType: 6},
 		},
